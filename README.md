@@ -15,7 +15,8 @@
   định dạng golden `eval/golden/schema.json`, thang chấm người `eval/rubric.md`; **Lõi văn phong** §19
   (`visynth style …`: lint, biên dịch, vòng đời duyệt, `compare` test-drive).
   Còn thiếu **tài liệu thật**, **bake-off thật**, **nội dung lĩnh vực đầu tiên** (§19.9 cần 3–10 tài liệu mẫu
-  + 5–20 cặp dịch tham chiếu do bạn duyệt). Xem [`eval/README.md`](eval/README.md).
+  + 5–20 cặp dịch tham chiếu do bạn duyệt). Xem [`eval/README.md`](eval/README.md) và
+  **[`eval/report.md`](eval/report.md)** — báo cáo W4 kèm quyết định đi tiếp và việc cần bạn cấp.
 
 ## Cấu trúc kho
 

@@ -14,6 +14,7 @@ Chạy thật (có LLM) hay chạy kịch bản giả (`--demo`) đều cho cùn
 | `runs/<ngày>/<doc_id>/` | Kết quả từng lần: `run.json` (artifact của pipeline), `report.md`, `score.json`, `score.md` — dùng làm baseline để so |
 | `fixtures/demo_lecture.txt` | Tài liệu mẫu do nhóm tự viết (kiểm tra luồng, **không phải** kết quả chất lượng) |
 | `demo_report.md` | Báo cáo sinh bởi `visynth run --demo` — chỉ để xem luồng |
+| `report.md` | **Báo cáo W4 + quyết định đi tiếp/chỉnh hướng**: điều kiện thoát nào đã chứng minh offline, điều kiện nào còn chờ dữ liệu/khoá thật, kèm lệnh chạy cụ thể |
 
 ## Chạy một vòng chấm
 
