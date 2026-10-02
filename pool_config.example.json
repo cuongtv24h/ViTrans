@@ -1,0 +1,480 @@
+{
+  "version": 1,
+  "note": "MẪU để bắt đầu: mọi hạn mức, giá và điểm chất lượng ở đây là GIẢ ĐỊNH của chủ hệ thống, phải đo lại. Trình tự: cp pool_config.example.json pool_config.json → `visynth pool models --config pool_config.json` để lấy id model thật → `visynth pool probe --config pool_config.json --out eval/runs/probe.json` → dán `limits`/`quality`/`tokenizer_factor` đo được vào bản của bạn.",
+  "policy": {
+    "priority_reserve": 0.2,
+    "lease_ttl_s": 300,
+    "diversity_max_wait_s": 60,
+    "allow_risk_at_public_gates": false
+  },
+  "providers": [
+    {
+      "id": "gemini",
+      "kind": "gemini_native",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "display_name": "Google Gemini API",
+      "quirks": {
+        "quota_scope": "deployment",
+        "auth_header": "x-goog-api-key"
+      }
+    },
+    {
+      "id": "nvidia",
+      "kind": "openai_compat",
+      "base_url": "https://integrate.api.nvidia.com/v1",
+      "display_name": "NVIDIA API Catalog (bản thử nghiệm)",
+      "quirks": {
+        "quota_scope": "group",
+        "auth_header": "bearer"
+      }
+    },
+    {
+      "id": "reserve",
+      "kind": "openai_compat",
+      "base_url": "https://openrouter.ai/api/v1",
+      "display_name": "Khoá dự phòng (chuẩn OpenAI Chat Completions)",
+      "quirks": {
+        "quota_scope": "group",
+        "auth_header": "bearer"
+      }
+    }
+  ],
+  "models": [
+    {
+      "id": "gemini:gemini-3.8-flash",
+      "provider": "gemini",
+      "model_id": "gemini-3.8-flash",
+      "ctx_in": 1048576,
+      "max_out": 65536,
+      "structured": "json_schema",
+      "vision": true,
+      "pdf": true,
+      "tokenizer_factor": 1.0,
+      "price_key": "gemini-3.8-flash",
+      "shadow_price_key": "gemini-3.8-flash",
+      "quality": {
+        "json": 0.98,
+        "vi_write": 0.9,
+        "long_context": 0.95
+      },
+      "adapter_options": {
+        "max_tokens_param": "max_tokens",
+        "reasoning_param": "thinking_level",
+        "strip_think_tags": false
+      }
+    },
+    {
+      "id": "nvidia:meta/llama-3.3-70b-instruct",
+      "provider": "nvidia",
+      "model_id": "meta/llama-3.3-70b-instruct",
+      "ctx_in": 32768,
+      "max_out": 4096,
+      "structured": "json_object",
+      "vision": false,
+      "pdf": false,
+      "tokenizer_factor": 1.3,
+      "price_key": null,
+      "shadow_price_key": "gemini-3.8-flash",
+      "quality": {
+        "json": 0.9,
+        "vi_write": 0.7,
+        "long_context": 0.7
+      },
+      "adapter_options": {
+        "max_tokens_param": "max_tokens",
+        "reasoning_param": "none",
+        "strip_think_tags": false
+      }
+    },
+    {
+      "id": "reserve:example-large-chat",
+      "provider": "reserve",
+      "model_id": "example/large-chat",
+      "ctx_in": 131072,
+      "max_out": 8192,
+      "structured": "json_object",
+      "vision": false,
+      "pdf": false,
+      "tokenizer_factor": 1.25,
+      "price_key": null,
+      "shadow_price_key": "gemini-3.8-flash",
+      "quality": {
+        "json": 0.9,
+        "vi_write": 0.7,
+        "long_context": 0.8
+      },
+      "adapter_options": {
+        "max_tokens_param": "max_tokens",
+        "reasoning_param": "none",
+        "strip_think_tags": true
+      }
+    }
+  ],
+  "groups": [
+    {
+      "id": "gemini-main",
+      "provider": "gemini",
+      "label": "Khoá chính — Gemini trả phí theo dùng",
+      "tier": "paid",
+      "data_policy": "no_training",
+      "reset_tz": "America/Los_Angeles",
+      "tos_flags": [],
+      "allowed_gates": [
+        "dev",
+        "A",
+        "B",
+        "C"
+      ],
+      "safety_margin": 0.85,
+      "day_margin": 0.95,
+      "limits": {
+        "rpm": null,
+        "tpm": null,
+        "rpd": null,
+        "tpd": null,
+        "concurrency": null
+      },
+      "credentials": [
+        {
+          "id": "gemini-main-k1",
+          "label": "khoá chính",
+          "secret_ref": "env:GEMINI_API_KEY"
+        }
+      ],
+      "enabled": true,
+      "risk_ack": []
+    },
+    {
+      "id": "nvidia-trial",
+      "provider": "nvidia",
+      "label": "Khoá dự phòng — NVIDIA API Catalog (bản thử nghiệm, chỉ tài liệu không nhạy cảm)",
+      "tier": "trial",
+      "data_policy": "unknown",
+      "reset_tz": "UTC",
+      "tos_flags": [
+        "trial_only",
+        "no_personal_data"
+      ],
+      "allowed_gates": [
+        "dev"
+      ],
+      "safety_margin": 0.85,
+      "day_margin": 0.95,
+      "limits": {
+        "rpm": 40,
+        "tpm": null,
+        "rpd": null,
+        "tpd": null,
+        "concurrency": null
+      },
+      "credentials": [
+        {
+          "id": "nvidia-trial-k1",
+          "label": "khoá NVIDIA",
+          "secret_ref": "env:NVIDIA_API_KEY"
+        }
+      ],
+      "enabled": true,
+      "risk_ack": [
+        "trial_only"
+      ]
+    },
+    {
+      "id": "reserve-account",
+      "provider": "reserve",
+      "label": "Khoá dự phòng thứ hai — một khoá duy nhất",
+      "tier": "free",
+      "data_policy": "unknown",
+      "reset_tz": "UTC",
+      "tos_flags": [],
+      "allowed_gates": [
+        "dev"
+      ],
+      "safety_margin": 0.85,
+      "day_margin": 0.95,
+      "limits": {
+        "rpm": 20,
+        "tpm": null,
+        "rpd": 1000,
+        "tpd": null,
+        "concurrency": null
+      },
+      "credentials": [
+        {
+          "id": "reserve-account-k1",
+          "label": "khoá dự phòng",
+          "secret_ref": "env:RESERVE_API_KEY"
+        }
+      ],
+      "enabled": true,
+      "risk_ack": []
+    }
+  ],
+  "deployments": [
+    {
+      "id": "gemini-main/flash",
+      "group": "gemini-main",
+      "model": "gemini:gemini-3.8-flash",
+      "limits": {
+        "rpm": 300,
+        "tpm": 2000000,
+        "rpd": null,
+        "tpd": null,
+        "concurrency": 12
+      },
+      "tpm_basis": "input",
+      "price_mode": "metered",
+      "weight": 1.0,
+      "tags": [
+        "paid",
+        "strong",
+        "flash"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "reserve-account/large",
+      "group": "reserve-account",
+      "model": "reserve:example-large-chat",
+      "limits": {
+        "rpm": null,
+        "tpm": 60000,
+        "rpd": null,
+        "tpd": null,
+        "concurrency": 2
+      },
+      "tpm_basis": "total",
+      "price_mode": "free",
+      "weight": 0.6,
+      "tags": [
+        "free",
+        "mid"
+      ],
+      "enabled": true
+    },
+    {
+      "id": "nvidia-trial/chat",
+      "group": "nvidia-trial",
+      "model": "nvidia:meta/llama-3.3-70b-instruct",
+      "limits": {
+        "rpm": null,
+        "tpm": null,
+        "rpd": null,
+        "tpd": null,
+        "concurrency": 2
+      },
+      "tpm_basis": "total",
+      "price_mode": "free",
+      "weight": 1.0,
+      "tags": [
+        "free",
+        "trial"
+      ],
+      "enabled": true
+    }
+  ],
+  "profiles": [
+    {
+      "name": "fast",
+      "needs": {
+        "structured": "json_object",
+        "min_ctx_in": 30000,
+        "vision": false,
+        "pdf": false,
+        "min_quality": {
+          "json": 0.85
+        }
+      },
+      "tiers": [
+        {
+          "name": "trial-dev",
+          "select": {
+            "tags": [],
+            "group_tiers": [
+              "trial"
+            ]
+          },
+          "strategy": "headroom",
+          "max_wait_s": 20
+        },
+        {
+          "name": "free",
+          "select": {
+            "tags": [
+              "free"
+            ],
+            "group_tiers": [
+              "free"
+            ]
+          },
+          "strategy": "headroom",
+          "max_wait_s": 90
+        },
+        {
+          "name": "paid",
+          "select": {
+            "tags": [],
+            "group_tiers": [
+              "paid"
+            ]
+          },
+          "strategy": "ordered",
+          "max_wait_s": null
+        }
+      ]
+    },
+    {
+      "name": "writer",
+      "needs": {
+        "structured": "json_object",
+        "min_ctx_in": 100000,
+        "vision": false,
+        "pdf": false,
+        "min_quality": {
+          "json": 0.95,
+          "vi_write": 0.8
+        }
+      },
+      "tiers": [
+        {
+          "name": "free-strong",
+          "select": {
+            "tags": [
+              "strong"
+            ],
+            "group_tiers": [
+              "free"
+            ]
+          },
+          "strategy": "headroom",
+          "max_wait_s": 120
+        },
+        {
+          "name": "paid",
+          "select": {
+            "tags": [],
+            "group_tiers": [
+              "paid"
+            ]
+          },
+          "strategy": "ordered",
+          "max_wait_s": null
+        }
+      ]
+    },
+    {
+      "name": "verifier",
+      "needs": {
+        "structured": "json_object",
+        "min_ctx_in": 100000,
+        "vision": false,
+        "pdf": false,
+        "min_quality": {
+          "json": 0.95,
+          "vi_write": 0.8
+        }
+      },
+      "tiers": [
+        {
+          "name": "free-strong",
+          "select": {
+            "tags": [
+              "strong"
+            ],
+            "group_tiers": [
+              "free"
+            ]
+          },
+          "strategy": "headroom",
+          "max_wait_s": 120
+        },
+        {
+          "name": "paid",
+          "select": {
+            "tags": [],
+            "group_tiers": [
+              "paid"
+            ]
+          },
+          "strategy": "ordered",
+          "max_wait_s": null
+        }
+      ]
+    },
+    {
+      "name": "ocr",
+      "needs": {
+        "structured": "json_object",
+        "min_ctx_in": 100000,
+        "vision": true,
+        "pdf": true,
+        "min_quality": {}
+      },
+      "tiers": [
+        {
+          "name": "free-strong",
+          "select": {
+            "tags": [
+              "strong"
+            ],
+            "group_tiers": [
+              "free"
+            ]
+          },
+          "strategy": "headroom",
+          "max_wait_s": 60
+        },
+        {
+          "name": "paid",
+          "select": {
+            "tags": [],
+            "group_tiers": [
+              "paid"
+            ]
+          },
+          "strategy": "ordered",
+          "max_wait_s": null
+        }
+      ]
+    },
+    {
+      "name": "curator",
+      "needs": {
+        "structured": "json_object",
+        "min_ctx_in": 100000,
+        "vision": false,
+        "pdf": false,
+        "min_quality": {
+          "json": 0.95,
+          "vi_write": 0.85
+        }
+      },
+      "tiers": [
+        {
+          "name": "free-strong",
+          "select": {
+            "tags": [
+              "strong"
+            ],
+            "group_tiers": [
+              "free"
+            ]
+          },
+          "strategy": "headroom",
+          "max_wait_s": 300
+        },
+        {
+          "name": "paid",
+          "select": {
+            "tags": [],
+            "group_tiers": [
+              "paid"
+            ]
+          },
+          "strategy": "ordered",
+          "max_wait_s": null
+        }
+      ]
+    }
+  ]
+}

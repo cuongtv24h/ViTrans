@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Công cụ
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Môi trường & khoá (không bao giờ commit)
+.env
+.env.*
+!.env.example
+*.key
+secrets/
+
+# Cấu hình pool cục bộ (đã đo hạn mức thật, có thể chứa chi tiết tài khoản)
+pool_config.json

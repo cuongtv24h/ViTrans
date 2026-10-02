@@ -1,0 +1,40 @@
+# Ghi chú bài giảng (tài liệu mẫu cho M0)
+
+> Tài liệu này do nhóm ViSynth tự viết để thử pipeline; không phải trích từ nguồn có bản quyền.
+
+## 1. Vì sao cần tổng hợp thay vì dịch thô
+
+Một bài giảng 90 phút thường chứa rất nhiều phần lặp lại: giới thiệu, nhắc lại, ví dụ,
+hỏi đáp. Nếu dịch nguyên văn, người đọc phải tự bỏ qua những phần đó. Báo cáo tổng hợp
+giữ lại các ý cốt lõi kèm trích dẫn nguồn, nên đọc nhanh hơn và kiểm chứng được.
+
+## 2. Ba câu hỏi phải trả lời trước khi viết báo cáo
+
+1. Đơn vị tri thức nào là cốt lõi, đơn vị nào chỉ là ví dụ?
+2. Số liệu, ngày tháng và tên riêng có xuất hiện đúng như nguồn không?
+3. Câu nào là ý của tác giả, câu nào là diễn giải của hệ thống?
+
+## 3. Ví dụ minh hoạ (dữ liệu giả)
+
+| Mức | Mục tiêu độ dài | Khi nào dùng |
+|---|---|---|
+| Dịch đầy đủ | ~100% nguồn | Cần đọc từng ý |
+| Tổng hợp chi tiết | ~35% nguồn | Muốn nắm gần hết ý |
+| Báo cáo chuyên sâu | ~12% nguồn | Hiểu hệ thống ý tưởng |
+| Tóm lược điều hành | ~3% nguồn | Chỉ cần ý trung tâm |
+
+## 4. Kiểm tra bằng code
+
+```python
+# Ví dụ: mọi pid đầu vào phải xuất hiện đúng một lần ở đầu ra
+assert sorted(in_pids) == sorted(out_pids)
+```
+
+Ba nhóm kiểm tra tất định thường dùng:
+
+- trích đoạn bằng chứng phải có thật trong nguồn;
+- con số trong báo cáo phải tìm thấy trong nguồn;
+- thuật ngữ phải khớp bảng thuật ngữ đã duyệt.
+
+Kết luận: giữ nguyên số liệu, không thêm kiến thức ngoài nguồn, và luôn có đường thoát
+an toàn khi không chắc (đánh cờ thay vì đoán).
