@@ -1,0 +1,58 @@
+# Caddy: TLS tự động + cổng DUY NHẤT mở ra ngoài (§20.2). Không dùng Cloudflare proxy ở cổng A/B —
+# nếu dùng, Cloudflare kết thúc TLS và thấy nội dung ở dạng rõ, phải nêu trong chính sách riêng tư (§20.3).
+{
+	email {$ACME_EMAIL}
+	# Nhật ký không chứa nội dung tài liệu: tắt log thân yêu cầu, chỉ giữ dòng truy cập tối thiểu.
+	admin off
+	servers {
+		trusted_proxies static private_ranges
+	}
+	log {
+		output stderr
+		format json
+		level INFO
+	}
+}
+
+{$VISYNTH_DOMAIN} {
+	encode zstd gzip
+
+	# Giới hạn thô trước khi vào ứng dụng (giới hạn thật vẫn ở API, §14.2).
+	request_body {
+		max_size 30MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# Sức khoẻ: cho giám sát ngoài máy ping, không cần xác thực, không lộ gì ngoài trạng thái (§20.7).
+	handle /api/v1/healthz {
+		reverse_proxy api:8000
+	}
+
+	# Toàn bộ API (đăng nhập, tài liệu, job, SSE, admin).
+	handle /api/* {
+		reverse_proxy api:8000 {
+			# SSE cần tắt đệm và giữ kết nối lâu (§12.5).
+			flush_interval -1
+			transport http {
+				read_timeout 0
+			}
+		}
+	}
+
+	# Giao diện (M2): bật khi có service `web`. Trước đó, đường gốc trả về thông báo gọn.
+	handle {
+		respond "ViSynth API đang chạy. Giao diện sẽ có ở mốc M2." 200
+	}
+
+	log {
+		# Che các chuỗi trông như khoá API nếu chúng lỡ xuất hiện trong URL truy vấn.
+		output stderr
+	}
+}

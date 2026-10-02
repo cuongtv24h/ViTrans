@@ -1,0 +1,32 @@
+# Ngữ cảnh build là gốc kho, nên phải chặn ở đây mọi thứ không được nằm trong image.
+# Bí mật: KHÔNG bao giờ vào image (§20.5).
+.env
+.env.*
+!.env.example
+secrets/
+infra/secrets/
+infra/backup/
+*.key
+*.pem
+
+# Git và thứ sinh ra khi chạy thử
+.git
+.gitignore
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+eval/runs/
+eval/reports/
+infra/.env
+
+# Tài liệu không cần lúc chạy (đỡ nặng image); phần cần đã COPY tường minh trong Dockerfile.
+docs/SPEC.md
+docs/BUILD_PLAN.md
+docs/tests/
+docs/tools/
+docs/requirements.txt
+docs/pytest.ini
+infra/README.md

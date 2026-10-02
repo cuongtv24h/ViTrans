@@ -148,6 +148,39 @@ class PooledLLMClient:
         refs = {c["id"]: c.get("secret_ref", "") for g in cfg.get("groups", []) for c in g.get("credentials", [])}
         return cls(load_pool_model(cfg), providers, refs, **kw)
 
+    @classmethod
+    def from_db(
+        cls,
+        db,
+        master_key: bytes,
+        *,
+        ledger: object | None = None,
+        user_id: str | None = None,
+        stage: str | None = None,
+        **kw,
+    ) -> PooledLLMClient:
+        """Dựng client từ cấu hình pool TRONG CSDL (đường chạy của VPS, SPEC §20).
+
+        Khoá API nằm ở `llm_credentials.secret_enc` và chỉ được giải mã khi thật sự gọi nhà cung cấp;
+        `secret_ref = enc:<id>` được phân giải bởi `DbRegistry`. Sổ ghi mặc định là `DbLedger`
+        (`llm_calls`) — hàng đợi và sổ sách ở cùng một CSDL nên không có trạng thái thứ hai để lệch.
+        """
+        from visynth.pool import dbstore
+
+        cfg = dbstore.load_config(db)
+        providers = {p["id"]: p for p in cfg.get("providers", [])}
+        refs = {c["id"]: c.get("secret_ref", "") for g in cfg.get("groups", []) for c in g.get("credentials", [])}
+        if ledger is None:
+            ledger = dbstore.DbLedger(db, user_id=user_id, stage=stage)
+        return cls(
+            load_pool_model(cfg),
+            providers,
+            refs,
+            registry=dbstore.DbRegistry(db, master_key),
+            ledger=ledger,
+            **kw,
+        )
+
     # ------------------------------------------------------------------ nội bộ
     def _estimate_in(self, request: LLMRequest) -> int:
         return max(1, int(len(request.text) / CHARS_PER_TOKEN))

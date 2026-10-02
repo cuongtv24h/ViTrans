@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
+from visynth.worker import ops
 from visynth.worker.runner import JobWorker
 from visynth.worker.store import WorkerStore
 
-__all__ = ["JobWorker", "WorkerStore"]
+__all__ = ["JobWorker", "WorkerStore", "ops"]

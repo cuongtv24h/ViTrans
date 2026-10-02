@@ -32,6 +32,7 @@ class Settings:
     upload_dir: Path = field(default_factory=lambda: Path(os.environ.get("VISYNTH_UPLOAD_DIR", "/tmp/visynth/uploads")))
     pool_config: Path | None = None
     pool_master_key: str = ""  # POOL_MASTER_KEY: khoá chủ mã hoá khoá API (KHÔNG nằm trong CSDL/bản sao lưu)
+    pool_master_key_file: Path | None = None  # POOL_MASTER_KEY_FILE: tệp 0400 hoặc Docker secret (§20.5)
     prompts_dir: Path | None = None
     schemas_dir: Path | None = None
     session_ttl_s: int = 14 * 24 * 3600
@@ -45,14 +46,22 @@ class Settings:
     worker_limit: int = 1
     worker_idle_exit_s: float = 0.0  # >0: tự thoát khi hàng đợi trống (chạy một lượt theo cron)
     base_url: str = "http://localhost:8000"
+    #: Chỉ để chẩn đoán: khoá chủ được đọc từ tệp thay vì biến môi trường.
+    pool_master_key_file_used: bool = False
 
     def __post_init__(self) -> None:
         if not self.db_dsn:
             self.db_dsn = os.environ.get("VISYNTH_DB_DSN", "")
         if not self.session_secret:
             self.session_secret = os.environ.get("VISYNTH_SESSION_SECRET", "")
+        if self.pool_master_key_file is None and os.environ.get("VISYNTH_POOL_MASTER_KEY_FILE"):
+            self.pool_master_key_file = Path(os.environ["VISYNTH_POOL_MASTER_KEY_FILE"])
         if not self.pool_master_key:
             self.pool_master_key = os.environ.get("VISYNTH_POOL_MASTER_KEY") or os.environ.get("POOL_MASTER_KEY", "")
+        if not self.pool_master_key and self.pool_master_key_file is not None and self.pool_master_key_file.is_file():
+            # Docker secret / tệp 0400: khoá không bao giờ nằm trong `.env`, `docker inspect` hay bản sao lưu
+            self.pool_master_key = self.pool_master_key_file.read_text(encoding="utf-8").strip()
+            self.pool_master_key_file_used = True
         if self.pool_config is None and os.environ.get("VISYNTH_POOL_CONFIG"):
             self.pool_config = Path(os.environ["VISYNTH_POOL_CONFIG"])
         if self.prompts_dir is None and os.environ.get("VISYNTH_PROMPTS_DIR"):

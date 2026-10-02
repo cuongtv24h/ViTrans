@@ -1022,12 +1022,38 @@ def cmd_worker(args: argparse.Namespace) -> int:
             return 1
 
     def factory(job: dict):
-        if args.fake or not args.pool_config:
+        if args.fake or (not args.pool_config and not args.pool_from_db):
             from visynth.eval import demo_client, demo_extraction
 
             return demo_client(demo_extraction())
         from visynth.pool.client import Ledger, PooledLLMClient
 
+        if args.pool_from_db:  # đường chạy của VPS: cấu hình + khoá nằm trong CSDL, khoá chủ ở ngoài
+            from visynth.pool import dbstore
+            from visynth.pool.pgstore import PgStore
+            from visynth.pool.secrets import load_master_key
+
+            key_text = os.environ.get("VISYNTH_POOL_MASTER_KEY") or os.environ.get("POOL_MASTER_KEY") or ""
+            key_file = os.environ.get("VISYNTH_POOL_MASTER_KEY_FILE") or os.environ.get("POOL_MASTER_KEY_FILE") or ""
+            if not key_text and key_file and Path(key_file).is_file():
+                key_text = Path(key_file).read_text(encoding="utf-8").strip()
+            if not key_text:
+                print(
+                    "LỖI: --pool-from-db cần POOL_MASTER_KEY hoặc POOL_MASTER_KEY_FILE để giải mã khoá API",
+                    file=sys.stderr,
+                )
+                return None
+            store = PgStore(args.db_dsn)
+            return PooledLLMClient.from_db(
+                store,
+                load_master_key(key_text),
+                user_id=(job or {}).get("user_id"),
+                stage=(job or {}).get("current_stage"),
+                ledger=Ledger(Path(args.ledger) if args.ledger else None)
+                if args.ledger
+                else dbstore.DbLedger(store, user_id=(job or {}).get("user_id")),
+                gate=args.gate,
+            )
         cfg = json.loads(Path(args.pool_config).read_text(encoding="utf-8"))
         return PooledLLMClient.from_config(
             cfg, ledger=Ledger(Path(args.ledger) if args.ledger else None), gate=args.gate
@@ -1036,10 +1062,13 @@ def cmd_worker(args: argparse.Namespace) -> int:
     store = WorkerStore(args.db_dsn, worker_id=args.worker_id)
     worker = JobWorker(store, factory, limit=args.limit, per_job_limit=args.per_job, style_core_text=style_text)
     mode = "một lượt" if args.once else "vòng lặp"
-    print(
-        f"worker {args.worker_id}: {mode} (limit {args.limit}, mỗi job {args.per_job})"
-        + (" — client giả" if args.fake or not args.pool_config else "")
-    )
+    if args.fake or not (args.pool_config or args.pool_from_db):
+        source = "client giả"
+    elif args.pool_from_db:
+        source = "pool trong CSDL"
+    else:
+        source = f"pool từ tệp {args.pool_config}"
+    print(f"worker {args.worker_id}: {mode} (limit {args.limit}, mỗi job {args.per_job}) — {source}")
     if args.once:
         report = worker.run_once()
         print(
@@ -1083,6 +1112,56 @@ def cmd_db(args: argparse.Namespace) -> int:
         return 0
     print("LỖI: chưa hỗ trợ", file=sys.stderr)
     return 2
+
+
+def cmd_ops(args: argparse.Namespace) -> int:
+    """Bảo trì định kỳ (SPEC §20): thu hồi task/chỗ đặt, xoá nội dung hết hạn, đọc số liệu sức khoẻ."""
+    from visynth.worker import ops
+
+    if not args.db_dsn:
+        print("LỖI: cần --db-dsn (hoặc VISYNTH_DB_DSN)", file=sys.stderr)
+        return 2
+    try:
+        if args.ops_cmd == "reap":
+            payload = ops.reap(args.db_dsn, stale=args.stale, dry_run=args.dry_run)
+        elif args.ops_cmd == "purge":
+            payload = ops.purge(args.db_dsn, dry_run=args.dry_run)
+        else:
+            payload = ops.health(args.db_dsn)
+    except Exception as exc:  # noqa: BLE001 - cron/giám sát phải thấy mã thoát khác 0
+        print(f"LỖI: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    if args.json:
+        print(ops.as_json(payload))
+    elif args.ops_cmd == "reap":
+        print(
+            f"thu hồi {payload['tasks']} task và {payload['leases']} chỗ đặt"
+            + ("" if payload["applied"] else " (chỉ xem trước)")
+        )
+    elif args.ops_cmd == "purge":
+        print(
+            f"xoá nội dung gốc của {payload['documents']} tài liệu" + ("" if payload["applied"] else " (chỉ xem trước)")
+        )
+        for key in payload.get("storage_keys") or []:
+            print(f"  cần xoá tệp: {key}")
+    else:
+        print(
+            f"hàng đợi: {payload['tasks_pending']} chờ / {payload['tasks_running']} đang chạy"
+            f" | job đang chạy: {payload['jobs_active']} | job chờ > 30 phút: {payload['jobs_waiting_30m']}"
+        )
+        print(
+            f"lỗi 1 giờ: {payload['tasks_failed_1h']} | chỗ đặt hết hạn: {payload['leases_expired']}"
+            f" | khoá bị cách ly: {payload['credentials_quarantined']} | ví âm: {payload['users_negative_credits']}"
+        )
+    # Mã thoát 3 = có dấu hiệu cần người xem (giám sát ngoài máy bắt được mà không phải đọc log)
+    if args.ops_cmd == "health":
+        serious = (
+            payload["jobs_waiting_30m"] > 0
+            or payload["users_negative_credits"] > 0
+            or payload["credentials_quarantined"] > 0
+        )
+        return 3 if serious else 0
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1251,7 +1330,12 @@ def build_parser() -> argparse.ArgumentParser:
     w.add_argument("--poll", type=float, default=2.0)
     w.add_argument("--idle-exit", type=float, default=0.0, help="tự thoát sau N giây hàng đợi trống (0 = chạy mãi)")
     w.add_argument("--fake", action="store_true", help="dùng client giả (dev/test)")
-    w.add_argument("--pool-config", help="chạy LLM thật bằng pool_config này")
+    w.add_argument("--pool-config", help="chạy LLM thật bằng pool_config này (tệp; tiện cho dev/CLI)")
+    w.add_argument(
+        "--pool-from-db",
+        action="store_true",
+        help="đọc pool + khoá mã hoá từ CSDL (đường chạy của VPS; cần POOL_MASTER_KEY/POOL_MASTER_KEY_FILE)",
+    )
     w.add_argument("--ledger")
     w.add_argument("--gate", choices=["dev", "A", "B", "C"], default="dev")
     w.add_argument("--style-core", help="biên dịch lõi văn phong đã duyệt cho mọi job")
@@ -1268,6 +1352,24 @@ def build_parser() -> argparse.ArgumentParser:
         q = ds.add_parser(name, help=helptext)
         q.add_argument("--db-dsn", default=os.environ.get("VISYNTH_DB_DSN", ""))
         q.set_defaults(func=cmd_db)
+
+    ops_p = sub.add_parser("ops", help="bảo trì định kỳ (SPEC §20): thu hồi task/chỗ đặt, xoá nội dung hết hạn")
+    os_sub = ops_p.add_subparsers(dest="ops_cmd", required=True)
+    q = os_sub.add_parser("reap", help="thu hồi task mồ côi và chỗ đặt hết hạn (chạy mỗi phút)")
+    q.add_argument("--stale", default="3 minutes", help="task 'running' quá hạn heartbeat này thì thu hồi")
+    q.add_argument("--dry-run", action="store_true", help="chỉ đếm, không ghi")
+    q.add_argument("--json", action="store_true", help="in JSON một dòng (cho cron/giám sát)")
+    q.add_argument("--db-dsn", default=os.environ.get("VISYNTH_DB_DSN", ""))
+    q.set_defaults(func=cmd_ops)
+    q = os_sub.add_parser("purge", help="xoá nội dung gốc quá hạn lưu, giữ bản ghi + trích dẫn (chạy mỗi giờ)")
+    q.add_argument("--dry-run", action="store_true", help="chỉ liệt kê, không xoá")
+    q.add_argument("--json", action="store_true", help="in JSON một dòng (cho cron/giám sát)")
+    q.add_argument("--db-dsn", default=os.environ.get("VISYNTH_DB_DSN", ""))
+    q.set_defaults(func=cmd_ops)
+    q = os_sub.add_parser("health", help="in số liệu sức khoẻ cho giám sát ngoài máy (mã thoát 3 = cần xem)")
+    q.add_argument("--json", action="store_true", help="in JSON một dòng (cho cron/giám sát)")
+    q.add_argument("--db-dsn", default=os.environ.get("VISYNTH_DB_DSN", ""))
+    q.set_defaults(func=cmd_ops)
 
     gl = sub.add_parser("glossary", help="Glossary chuẩn (SPEC §19.5): P13, hàng đợi duyệt, phát hành")
     gs = gl.add_subparsers(dest="glossary_cmd", required=True)

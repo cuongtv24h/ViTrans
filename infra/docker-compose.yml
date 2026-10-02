@@ -1,0 +1,235 @@
+# ViSynth trên MỘT VPS cá nhân (SPEC §20). Chạy: `docker compose --env-file .env up -d`
+#
+# Quy tắc đã cài vào cấu trúc file này (không phải lời hứa suông):
+#   * Cổng DUY NHẤT mở ra ngoài là 80/443 của `caddy`. PostgreSQL, Redis, api, worker, parser
+#     KHÔNG publish cổng nào — kể cả khi ufw bị Docker đi vòng qua (§20.4).
+#   * Không container nào mount `docker.sock` (tương đương quyền root trên máy).
+#   * `worker` KHÔNG có đường ra internet trực tiếp: nó chỉ đi qua `egress` (squid, danh sách
+#     tên miền cho phép). Mạng `internal` không có định tuyến ra ngoài (§20.4 dòng "Egress").
+#   * `POOL_MASTER_KEY` đưa vào bằng Docker secret, KHÔNG nằm trong `.env`, `docker inspect` hay
+#     bản sao lưu CSDL (§20.5).
+#   * Mọi container chạy non-root, `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, có
+#     `mem_limit`/`pids_limit` để một tài liệu xấu không kéo sập máy.
+#
+# Cảnh báo: file này CHƯA được chạy thử trên máy thật. Kiểm tra cấu trúc bằng
+# `python -m pytest tests/test_infra.py`, còn lần chạy đầu tiên hãy làm theo `infra/README.md`
+# và đối chiếu với danh sách kiểm trong §20.
+name: visynth
+
+x-app-env: &app-env
+  VISYNTH_DB_DSN: postgresql://visynth:${POSTGRES_PASSWORD:?đặt POSTGRES_PASSWORD trong .env}@postgres:5432/visynth
+  VISYNTH_SESSION_SECRET: ${VISYNTH_SESSION_SECRET:?đặt VISYNTH_SESSION_SECRET trong .env}
+  VISYNTH_BASE_URL: https://${VISYNTH_DOMAIN:?đặt VISYNTH_DOMAIN trong .env}
+  VISYNTH_UPLOAD_DIR: /data/uploads
+  VISYNTH_POOL_MASTER_KEY_FILE: /run/secrets/pool_master_key
+  VISYNTH_PROMPTS_DIR: /app/docs/prompts
+  VISYNTH_SCHEMAS_DIR: /app/docs/schemas
+  TZ: ${TZ:-Asia/Ho_Chi_Minh}
+
+# Lớp chung cho mọi tiến trình Python: cùng image, cùng giới hạn tài nguyên, cùng tư thế bảo mật.
+x-app: &app
+  image: visynth-app:${VISYNTH_TAG:-local}
+  build:
+    context: ..
+    dockerfile: infra/Dockerfile
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  environment:
+    <<: *app-env
+  volumes:
+    - data:/data
+  depends_on:
+    postgres:
+      condition: service_healthy
+  networks: [internal]
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: visynth
+      POSTGRES_USER: visynth
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?đặt POSTGRES_PASSWORD trong .env}
+      # Múi giờ chỉ ảnh hưởng hiển thị; mốc ngày của pool do `reset_tz` từng nhóm quyết định (§17.5)
+      TZ: UTC
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=3GB
+      - -c
+      - max_connections=60
+      - -c
+      - log_min_duration_statement=2000
+      - -c
+      - track_io_timing=on
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+      - /var/run/postgresql:size=16m,mode=0775
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U visynth -d visynth"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    networks: [internal]
+
+  api:
+    <<: *app
+    command: ["/app/infra/entrypoint-api.sh"]
+    secrets: [pool_master_key]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/healthz', timeout=5).status == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    mem_limit: 1g
+    pids_limit: 256
+
+  worker:
+    <<: *app
+    # `$${HOSTNAME}` để mỗi bản sao có `worker_id` riêng (compose giải `$$` thành `$` cho shell).
+    command: ["sh", "-c", "exec python -m visynth.cli worker --pool-from-db --worker-id worker-$${HOSTNAME}"]
+    secrets: [pool_master_key]
+    environment:
+      <<: *app-env
+      # Ra internet CHỈ qua proxy có danh sách cho phép; không có tuyến nào khác từ mạng `internal`.
+      HTTPS_PROXY: http://egress:3128
+      HTTP_PROXY: http://egress:3128
+      NO_PROXY: postgres,api,caddy,egress,localhost,127.0.0.1
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+    mem_limit: 1g
+    pids_limit: 512
+
+  # `parser` (bóc tách/OCR trong sandbox không có mạng) CHƯA bật: hiện việc bóc tách chạy trong
+  # tiến trình API lúc tải tài liệu, chưa có hàng đợi riêng cho giai đoạn `extract`. Khi làm, thêm
+  # service đúng khuôn dưới đây — bắt buộc: chỉ mạng `internal` (không có tuyến ra internet),
+  # non-root, `read_only`, `cap_drop: [ALL]`, `mem_limit`, `pids_limit`, KHÔNG mount `docker.sock`
+  # (§20.2, §20.4):
+  #
+  # parser:
+  #   <<: *app
+  #   command: ["python", "-m", "visynth.cli", "worker", "--stages", "extract", "--worker-id", "parser-1"]
+  #   mem_limit: 1500m
+  #   pids_limit: 256
+
+  # Việc định kỳ gọi hàm SQL có sẵn: reclaim_stale_tasks + pool_reap_leases (mỗi phút),
+  # purge_expired_documents (mỗi giờ), và `health` để giám sát ngoài máy (§20.2, §20.7).
+  scheduler:
+    <<: *app
+    command: ["/app/infra/scheduler.sh"]
+    mem_limit: 256m
+    pids_limit: 64
+
+  # Sao lưu: image riêng vì cần `pg_dump` + `age` + `rclone` (không có trong image ứng dụng).
+  backup:
+    image: visynth-backup:${VISYNTH_TAG:-local}
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.backup
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PGHOST: postgres
+      PGDATABASE: visynth
+      PGUSER: visynth
+      PGPASSWORD: ${POSTGRES_PASSWORD:?đặt POSTGRES_PASSWORD trong .env}
+      AGE_PUBLIC_KEY: "${AGE_PUBLIC_KEY:?đặt AGE_PUBLIC_KEY trong .env, khoá riêng phải cất NGOÀI máy này}"
+      RCLONE_REMOTE: "${RCLONE_REMOTE:?ví dụ r2:visynth-backup}"
+      BACKUP_HEALTHCHECK_URL: ${BACKUP_HEALTHCHECK_URL:-}
+      BACKUP_KEEP_DAILY: ${BACKUP_KEEP_DAILY:-7}
+      BACKUP_KEEP_WEEKLY: ${BACKUP_KEEP_WEEKLY:-4}
+      BACKUP_HOUR: ${BACKUP_HOUR:-3}
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    volumes:
+      - data:/data:ro
+      - backup:/backup
+    mem_limit: 512m
+    pids_limit: 64
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+
+  # Proxy ra ngoài có danh sách tên miền cho phép: đây là biện pháp CHÍNH chống đánh cắp khoá
+  # nếu một thư viện bị chèn mã độc (§17.3, §20.4).
+  egress:
+    image: ubuntu/squid:6.6-24.04_beta
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./egress/squid.conf:/etc/squid/squid.conf:ro
+    tmpfs:
+      - /var/spool/squid:size=32m,mode=0777
+      - /var/log/squid:size=16m,mode=0777
+    mem_limit: 256m
+    pids_limit: 128
+    networks: [internal, uplink]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      VISYNTH_DOMAIN: ${VISYNTH_DOMAIN:?đặt VISYNTH_DOMAIN trong .env}
+      ACME_EMAIL: ${ACME_EMAIL:?đặt ACME_EMAIL trong .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    mem_limit: 128m
+    pids_limit: 128
+    # TLS tự động cần ra internet (ACME); phần còn lại của hệ thống thì không.
+    networks: [internal, uplink]
+
+volumes:
+  pgdata:
+  data:
+  backup:
+  caddy_data:
+  caddy_config:
+
+secrets:
+  # `infra/secrets/pool_master_key` (quyền 0400) — KHÔNG nằm trong git, KHÔNG nằm trong bản sao lưu.
+  pool_master_key:
+    file: ./secrets/pool_master_key
+
+networks:
+  # Không có định tuyến ra ngoài: PostgreSQL, api, worker, parser, backup chỉ sống ở đây.
+  internal:
+    internal: true
+  # Có ra internet: chỉ `egress` (proxy có danh sách cho phép) và `caddy` (ACME) nằm ở đây.
+  uplink:
+    driver: bridge

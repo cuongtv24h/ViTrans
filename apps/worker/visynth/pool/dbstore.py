@@ -934,6 +934,122 @@ def record_probe(db: Any, deployment_id: str, results: dict, *, passed: bool, no
     return row
 
 
+#: Ánh xạ `Outcome.kind` (§17.7) sang từ vựng `llm_calls.status`.
+CALL_STATUS = {
+    "ok": "ok",
+    "deferred": "blocked",
+    "impossible": "blocked",
+    "privacy_blocked": "blocked",
+    "gate_blocked": "blocked",
+    "auth_error": "fatal_error",
+    "bad_request": "fatal_error",
+    "context_exceeded": "fatal_error",
+    "safety_blocked": "fatal_error",
+    "rate_limited_minute": "retryable_error",
+    "rate_limited_day": "retryable_error",
+    "rate_limited_unknown": "retryable_error",
+    "server_error": "retryable_error",
+    "timeout": "retryable_error",
+    "network_error": "retryable_error",
+    "truncated": "retryable_error",
+}
+
+
+class DbLedger:
+    """Sổ `llm_calls` (§17.8) — bản thay cho `Ledger` ghi tệp khi chạy trên VPS.
+
+    Bất biến quan trọng nhất: **KHÔNG ghi nội dung** prompt/phản hồi vào CSDL. Hàng của pool có trường
+    `detail` (tới 200 ký tự của phản hồi) — nó bị bỏ ở đây; chỉ giữ số đo, khoá ngoại và `outcome`.
+    """
+
+    #: Cột của `llm_calls` mà sổ này ghi (mọi cột khác dùng giá trị mặc định của CSDL).
+    COLUMNS = (
+        "job_id",
+        "task_id",
+        "stage",
+        "prompt_id",
+        "prompt_version",
+        "model",
+        "tokens_in",
+        "tokens_cached",
+        "tokens_out",
+        "tokens_thinking",
+        "latency_ms",
+        "status",
+        "error_code",
+        "cost_usd",
+        "shadow_cost_usd",
+        "deployment_id",
+        "credential_id",
+        "group_tier",
+        "data_policy",
+        "privacy_class",
+        "outcome",
+        "pool_wait_ms",
+        "diversity_degraded",
+    )
+
+    def __init__(
+        self, db: Any, *, user_id: str | None = None, stage: str | None = None, privacy_class: str = "standard"
+    ):
+        self.db = db
+        self.user_id = user_id
+        self.stage = stage
+        self.privacy_class = privacy_class
+        self.written = 0
+
+    def append(self, row: dict) -> None:
+        """Ghi MỘT dòng sổ. Lỗi ghi sổ không được làm hỏng job đang chạy (chỉ đếm là mất)."""
+        kind = str(row.get("outcome") or "")
+        values: dict[str, Any] = {
+            "job_id": row.get("job_id"),
+            "task_id": row.get("task_id"),
+            "stage": self.stage,
+            "prompt_id": row.get("prompt_id"),
+            "prompt_version": row.get("prompt_version"),
+            "model": row.get("model") or "unknown",
+            "tokens_in": int(row.get("tokens_in") or 0),
+            "tokens_cached": int(row.get("tokens_cached") or 0),
+            "tokens_out": int(row.get("tokens_out") or 0),
+            "tokens_thinking": int(row.get("tokens_thinking") or 0),
+            "latency_ms": row.get("latency_ms"),
+            "status": CALL_STATUS.get(kind, "fatal_error" if kind in ("auth_error",) else "retryable_error"),
+            "error_code": (row.get("error_code") or (kind if kind and kind != "ok" else None)),
+            "cost_usd": float(row.get("cost_usd") or 0),
+            "shadow_cost_usd": float(row.get("shadow_cost_usd") or 0),
+            "deployment_id": row.get("deployment_id"),
+            "credential_id": row.get("credential_id"),
+            "group_tier": row.get("group_tier"),
+            "data_policy": row.get("data_policy"),
+            "privacy_class": self.privacy_class,
+            "outcome": kind or None,
+            "pool_wait_ms": int(row.get("pool_wait_ms") or 0),
+            "diversity_degraded": bool(row.get("diversity_degraded")),
+        }
+        if self.user_id:
+            values["user_id"] = self.user_id
+        columns = [*self.COLUMNS, *(["user_id"] if self.user_id else [])]
+        placeholders = ", ".join(["%s"] * len(columns))
+        self.db.execute(
+            f"INSERT INTO llm_calls ({', '.join(columns)}) VALUES ({placeholders})",
+            tuple(values[column] for column in columns),
+        )
+        self.written += 1
+
+    def totals(self) -> dict:
+        """Tổng hợp nhanh từ chính CSDL (dùng cho báo cáo/kiểm toán, không giữ trong RAM)."""
+        row = self.db.one(
+            """SELECT count(*) AS calls,
+                      count(*) FILTER (WHERE status = 'ok') AS calls_ok,
+                      coalesce(sum(tokens_in), 0)::bigint AS tokens_in,
+                      coalesce(sum(tokens_out), 0)::bigint AS tokens_out,
+                      coalesce(sum(cost_usd), 0)::numeric AS cost_usd,
+                      coalesce(sum(shadow_cost_usd), 0)::numeric AS shadow_cost_usd
+                 FROM llm_calls"""
+        )
+        return {key: (float(value) if key.endswith("_usd") else int(value)) for key, value in (row or {}).items()}
+
+
 def sync_model_quality(db: Any, deployment_id: str, results: dict) -> None:
     """Cập nhật `llm_models.quality` từ kết quả kiểm định (chỉ các chỉ số có đo)."""
     keys = {"json": "json", "vi_write": "vi_write", "long_context": "long_context", "mt_en_vi": "mt_en_vi"}

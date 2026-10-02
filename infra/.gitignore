@@ -1,0 +1,6 @@
+# Bí mật và bản sao lưu: KHÔNG bao giờ vào git (§20.5)
+.env
+.env.*
+!.env.example
+secrets/
+backup/
