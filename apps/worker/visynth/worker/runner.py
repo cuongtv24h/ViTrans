@@ -1,0 +1,266 @@
+"""Vòng đời worker (M1): nhận task theo lease → chạy pipeline → checkpoint + sự kiện → quyết toán.
+
+Trình tự một lượt `run_once()`:
+
+1. `reclaim_stale_tasks` — task của worker chết (lease quá hạn) trở về `pending`.
+2. `queued` → `running` + sinh `job_tasks` cho từng giai đoạn.
+3. `claim_tasks` (advisory lock theo job, `FOR UPDATE SKIP LOCKED`).
+4. Mỗi task: dựng lại `Extraction` từ CSDL, chạy 7 giai đoạn, sau MỖI giai đoạn ghi
+   `job_stages` (checkpoint quan sát được), `job_tasks.result` (tiến độ đã chạy), `job_events` (SSE)
+   và `heartbeat` để gia hạn lease.
+5. Hết giai đoạn: `finalize` → ghi `reports`/`report_sections`/`report_blocks` → `finish_job`
+   (hạng C thì hoàn tín dụng). Lỗi tạm thời: task `pending` + backoff; hết lượt: job `failed` + hoàn đủ.
+
+Ghi chú M1: pipeline giữ trạng thái trong bộ nhớ, nên khi một task được chạy lại (sau khi worker chết
+hoặc sau lỗi tạm thời) các giai đoạn chạy lại từ đầu; `job_tasks.result` ghi lại tiến độ để theo dõi và
+để M2 chuyển sang chạy lại theo giai đoạn (khôi phục `knowledge_units` đã lưu).
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from collections.abc import Callable
+from typing import Any
+
+from visynth.llm.base import RETRYABLE, LLMClient, LLMError
+from visynth.pipeline.assemble import finalize
+from visynth.pipeline.models import JobOptions
+from visynth.pipeline.stages import Pipeline
+from visynth.worker.store import STAGE_SEQUENCE, WorkerStore, to_jsonb
+
+log = logging.getLogger("visynth.worker")
+
+#: Sự kiện nội bộ của pipeline → loại sự kiện trong hợp đồng (`job_event.schema.json`).
+_EVENT_MAP = {
+    "job_started": "stage_started",
+    "warning": "warning",
+    "stage_progress": "stage_progress",
+    "stage_done": "stage_completed",
+    "block_removed": "warning",
+    "job_succeeded": "job_succeeded",
+}
+#: Giai đoạn → nhãn tiếng Việt hiển thị cho người dùng.
+STAGE_LABEL = {
+    "profile": "Đọc hồ sơ tài liệu",
+    "glossary": "Chốt thuật ngữ",
+    "map": "Trích xuất đơn vị tri thức",
+    "consolidate": "Hợp nhất và lập dàn ý",
+    "write": "Viết báo cáo",
+    "verify": "Kiểm chứng trích dẫn",
+    "repair": "Sửa các đoạn lỗi",
+}
+#: Trường không bao giờ được đưa vào `job_events` (nội dung tài liệu/báo cáo).
+_PRIVATE_KEYS = frozenset({"text", "content", "markdown", "quote", "snippet", "statement_vi", "title_vi"})
+
+
+class JobWorker:
+    """Một tiến trình worker. `client_factory(job)` trả `LLMClient` cho job (pool thật hoặc client giả)."""
+
+    def __init__(
+        self,
+        store: WorkerStore,
+        client_factory: Callable[[dict], LLMClient],
+        *,
+        prompts_dir: str | None = None,
+        schemas_dir: str | None = None,
+        limit: int = 1,
+        per_job_limit: int = 1,
+        stale: str = "3 minutes",
+        style_core_text: str = "",
+    ) -> None:
+        self.store = store
+        self.client_factory = client_factory
+        self.prompts_dir = prompts_dir
+        self.schemas_dir = schemas_dir
+        self.limit = limit
+        self.per_job_limit = per_job_limit
+        self.stale = stale
+        self.style_core_text = style_core_text
+
+    # ------------------------------------------------------------------ vòng lặp
+    def run_once(self) -> dict:
+        reclaimed = self.store.reclaim_stale(self.stale)
+        if reclaimed:
+            log.info("thu hồi %d task quá hạn lease", reclaimed)
+        promoted = self.store.promote_queued(self.limit)
+        for job in promoted:
+            self.store.emit(job["id"], "job_queued", message_vi="Đã xếp hàng, chờ worker", data={"level": job["level"]})
+        tasks = self.store.claim(limit=self.limit, per_job_limit=self.per_job_limit)
+        results = [self.run_task(task) for task in tasks]
+        return {"reclaimed": reclaimed, "promoted": len(promoted), "claimed": len(tasks), "results": results}
+
+    def run_forever(
+        self, poll_s: float = 2.0, idle_exit_after: float | None = None
+    ) -> None:  # pragma: no cover - vòng lặp dài
+        idle_s = 0.0
+        while True:
+            outcome = self.run_once()
+            if outcome["claimed"]:
+                idle_s = 0.0
+                continue
+            time.sleep(poll_s)
+            idle_s += poll_s
+            if idle_exit_after is not None and idle_s >= idle_exit_after:
+                log.info("hàng đợi trống %.0fs — thoát", idle_s)
+                return
+
+    # ------------------------------------------------------------------ một task
+    def run_task(self, task: dict) -> dict:
+        job = self.store.load_job(str(task["job_id"]))
+        if job["cancel_requested"]:
+            return {"job_id": job["id"], "canceled": True, **self.store.conclude_cancel(job)}
+        try:
+            report_id = self._run_pipeline(task, job)
+        except Exception as exc:  # noqa: BLE001 - mọi lỗi phải trở thành trạng thái task/job
+            retryable = _retryable(exc)
+            state = self.store.task_failed(task["id"], code=type(exc).__name__, message=str(exc), retryable=retryable)
+            log.warning("task %s lỗi (%s): %s", task["id"], state, exc)
+            if state == "failed":
+                remaining = self.store.tx_execute(
+                    "UPDATE job_tasks SET status = 'failed', error_code = 'job_failed', finished_at = now() "
+                    "WHERE job_id = %s AND status IN ('pending','running')",
+                    (job["id"],),
+                )
+                outcome = self.store.fail_job(job, code=type(exc).__name__, message=str(exc), retryable=retryable)
+                return {"job_id": job["id"], "failed": True, "tasks_failed": remaining, **outcome}
+            return {"job_id": job["id"], "retry": True, "state": state}
+        stats = (
+            self.store.one("SELECT tokens_in, tokens_out, cost_usd FROM job_tasks WHERE id = %s", (task["id"],)) or {}
+        )
+        self.store.task_succeeded(
+            task["id"],
+            result={"report_id": str(report_id)},
+            tokens_in=int(stats.get("tokens_in") or 0),
+            tokens_out=int(stats.get("tokens_out") or 0),
+            cost_usd=float(stats.get("cost_usd") or 0),
+        )
+        if stats.get("cost_usd"):
+            self.store.record_spend(float(stats["cost_usd"]))
+        return {"job_id": job["id"], "report_id": report_id}
+
+    # ------------------------------------------------------------------ pipeline
+    def _run_pipeline(self, task: dict, job: dict) -> str:
+        extraction = self.store.load_extraction(job)
+        options = JobOptions(level=job["level"], style_core_text=self.style_core_text or "")
+        pipeline = Pipeline(
+            extraction, self.client_factory(job), options, prompts_dir=self.prompts_dir, schemas_dir=self.schemas_dir
+        )
+        emitted = 0
+        finished_stages: list[str] = []
+        for stage in STAGE_SEQUENCE:
+            if self.store.scalar("SELECT cancel_requested FROM jobs WHERE id = %s", (job["id"],)):
+                self.store.conclude_cancel(self.store.load_job(job["id"]))
+                return ""
+            self.store.heartbeat(task["id"])
+            self.store.stage_started(job["id"], stage, int(task["attempt"] or 1))
+            getattr(pipeline, f"stage_{stage}")()
+            self.store.stage_finished(job["id"], stage, metrics=self._metrics(pipeline, stage))
+            emitted = self._flush_events(job["id"], pipeline.result.events, emitted, stage=stage)
+            finished_stages.append(stage)
+            self.store.tx_execute(
+                "UPDATE job_tasks SET result = %s, heartbeat_at = now() WHERE id = %s",
+                (to_jsonb({"done_stages": finished_stages, "llm_calls": pipeline.result.stats_llm.calls}), task["id"]),
+            )
+            self.store.tx_execute(
+                "UPDATE job_tasks SET tokens_in = %s, tokens_out = %s WHERE id = %s",
+                (pipeline.result.stats_llm.tokens_in, pipeline.result.stats_llm.tokens_out, task["id"]),
+            )
+
+        result = finalize(pipeline)
+        self._flush_events(job["id"], result.events, emitted, stage="repair")
+        shadow_usd = self._cost_usd(result.stats_llm.tokens_in, result.stats_llm.tokens_out)
+        self.store.tx_execute("UPDATE jobs SET actual_shadow_usd = %s WHERE id = %s", (shadow_usd, job["id"]))
+        report_id = self.store.save_report(job, result)
+        self.store.finish_job(job, result)
+        self.store.tx_execute(
+            "UPDATE job_tasks SET result = %s, cost_usd = %s WHERE id = %s",
+            (
+                to_jsonb({"report_id": report_id, "grade": result.grade, "stats": result.stats}),
+                shadow_usd,
+                task["id"],
+            ),
+        )
+        log.info(
+            "job %s xong: hạng %s, coverage %.2f, %d lời gọi LLM",
+            job["id"],
+            result.grade,
+            float(result.stats.get("coverage_core") or 0),
+            result.stats_llm.calls,
+        )
+        return report_id
+
+    def _cost_usd(self, tokens_in: int, tokens_out: int) -> float:
+        """Chi phí 'bóng' theo giá tham chiếu — dùng chính hàm SQL `llm_cost_usd` để không lệch giá."""
+        if not tokens_in and not tokens_out:
+            return 0.0
+        row = self.store.one(
+            """SELECT model FROM llm_prices WHERE effective_from <= current_date
+                ORDER BY effective_from DESC, model LIMIT 1"""
+        )
+        if not row:
+            return 0.0
+        return float(
+            self.store.scalar(
+                "SELECT llm_cost_usd(%s, current_date, %s, 0, %s, 0)",
+                (row["model"], tokens_in, tokens_out),
+            )
+            or 0
+        )
+
+    def _metrics(self, pipeline: Pipeline, stage: str) -> dict:
+        result = pipeline.result
+        return {
+            "stage": stage,
+            "units": len(result.units),
+            "sections": len(result.sections),
+            "blocks": len(result.blocks),
+            "llm_calls": result.stats_llm.calls,
+            "tokens_in": result.stats_llm.tokens_in,
+            "tokens_out": result.stats_llm.tokens_out,
+        }
+
+    def _flush_events(self, job_id: str, events: list[dict], emitted: int, *, stage: str | None = None) -> int:
+        """Đẩy sự kiện mới của pipeline vào `job_events` (đã che nội dung tài liệu)."""
+        for event in events[emitted:]:
+            kind = _EVENT_MAP.get(event["type"], "stage_progress")
+            data = {key: value for key, value in (event.get("data") or {}).items() if key not in _PRIVATE_KEYS}
+            message = None
+            if kind == "stage_completed":
+                message = f"Xong: {STAGE_LABEL.get(stage or '', stage or '')}"
+            elif event["type"] == "warning":
+                message = str(data.get("code") or "cảnh báo")
+            self.store.emit(
+                job_id,
+                kind,
+                stage=stage,
+                message_vi=message,
+                data=_json_safe(data),
+                progress=self.store.progress(job_id),
+            )
+        return len(events)
+
+
+def _retryable(exc: Exception) -> bool:
+    if isinstance(exc, (TimeoutError, ConnectionError)):
+        return True
+    if isinstance(exc, LLMError) and exc.outcome.kind in RETRYABLE:
+        return True
+    return bool(getattr(exc, "retryable", False))
+
+
+def _json_safe(data: dict[str, Any]) -> dict[str, Any]:
+    """Chỉ giữ giá trị JSON hoá được (giá trị lạ bị bỏ, không làm hỏng sự kiện)."""
+    out: dict[str, Any] = {}
+    for key, value in data.items():
+        if isinstance(value, bool) or value is None or isinstance(value, (int, float)):
+            out[key] = value
+        elif isinstance(value, str):
+            out[key] = value[:500]
+        elif isinstance(value, (list, tuple)):
+            out[key] = [v for v in list(value)[:20] if isinstance(v, (str, int, float, bool)) or v is None]
+        elif isinstance(value, dict):
+            out[key] = {
+                k: v for k, v in list(value.items())[:20] if isinstance(v, (str, int, float, bool)) or v is None
+            }
+    return out

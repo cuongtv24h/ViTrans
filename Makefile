@@ -3,7 +3,7 @@ PY ?= python
 VENV ?= .venv
 DOCS = docs
 
-.PHONY: help install lint test spec spec-build check clean
+.PHONY: help install lint test test-db spec spec-build check clean
 
 help:
 	@grep -E '^[a-z-]+:' $(MAKEFILE_LIST) | sed 's/:.*//' | sort | xargs printf '  make %s\n'
@@ -17,6 +17,10 @@ lint:
 
 test:
 	$(PY) -m pytest tests
+
+# Test trên PostgreSQL thật: dùng pgserver (nhị phân nhúng) hoặc VISYNTH_TEST_DSN trỏ tới CSDL thử.
+test-db:
+	$(PY) -m pytest tests/test_db_schema.py tests/test_api_m1.py
 
 spec:
 	cd $(DOCS) && $(PY) tools/validate_spec.py

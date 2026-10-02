@@ -5,10 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "visynth"
 version = "0.1.0"
-description = "ViSynth — pipeline chuyển ngữ & tổng hợp tài liệu sang tiếng Việt (M0 prototype)"
+description = "ViSynth — pipeline chuyển ngữ & tổng hợp tài liệu sang tiếng Việt (M1: API + worker trên PostgreSQL)"
 requires-python = ">=3.11"
 dependencies = [
   "python-docx>=1.1",
+  "psycopg[binary,pool]>=3.2",  # API + worker: PostgreSQL (SPEC §10)
+  "fastapi>=0.115",              # API (M1)
+  "uvicorn[standard]>=0.30",
+  "python-multipart>=0.0.9",     # upload multipart
+  "alembic>=1.13",               # baseline từ docs/db/schema.sql
+  "sqlalchemy>=2.0",             # chỉ dùng cho Alembic
+  "pydantic[email]>=2.7",
   "charset-normalizer>=3.3",
   "cryptography>=42",  # kho khoá API mã hoá (visynth.pool.secrets, SPEC §17.14)
 ]
@@ -16,6 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8",
+  "pgserver>=0.1",          # PostgreSQL nhúng cho test CSDL/API (bỏ qua nếu không cài)
   "ruff>=0.6",
   "jsonschema>=4.20",
   "pyyaml>=6",
@@ -26,7 +34,7 @@ dev = [
 visynth = "visynth.cli:main"
 
 [tool.setuptools]
-package-dir = {"" = "apps/worker"}
+package-dir = {"" = "apps/worker", "visynth_api" = "apps/api/visynth_api"}
 packages = [
   "visynth",
   "visynth.checks",
@@ -35,6 +43,9 @@ packages = [
   "visynth.llm",
   "visynth.pipeline",
   "visynth.pool",
+  "visynth.worker",
+  "visynth_api",
+  "visynth_api.routers",
 ]
 
 [tool.pytest.ini_options]
@@ -44,8 +55,12 @@ addopts = "-q"
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-src = ["apps/worker", "tests"]
+src = ["apps/worker", "apps/api", "tests", "eval"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI: `Depends()`, `File()`, `Header()` trong giá trị mặc định là idiom chính thức của framework.
+"apps/api/**/*.py" = ["B008"]

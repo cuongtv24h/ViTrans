@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import date
@@ -1001,6 +1002,89 @@ def cmd_glossary_publish(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_worker(args: argparse.Namespace) -> int:
+    """Worker production (M1): nhận task từ PostgreSQL rồi chạy pipeline P0–P8."""
+    from visynth.worker.runner import JobWorker
+    from visynth.worker.store import WorkerStore
+
+    if not args.db_dsn:
+        print("LỖI: cần --db-dsn (hoặc VISYNTH_DB_DSN)", file=sys.stderr)
+        return 2
+    style_text = ""
+    if args.style_core:
+        from visynth.stylecore import StyleCoreError, StyleCoreStore
+
+        store = StyleCoreStore.load(args.store) if args.store else StyleCoreStore.load()
+        try:
+            style_text = store.compile(args.style_core, "write")
+        except StyleCoreError as exc:
+            print(f"LỖI: {exc}", file=sys.stderr)
+            return 1
+
+    def factory(job: dict):
+        if args.fake or not args.pool_config:
+            from visynth.eval import demo_client, demo_extraction
+
+            return demo_client(demo_extraction())
+        from visynth.pool.client import Ledger, PooledLLMClient
+
+        cfg = json.loads(Path(args.pool_config).read_text(encoding="utf-8"))
+        return PooledLLMClient.from_config(
+            cfg, ledger=Ledger(Path(args.ledger) if args.ledger else None), gate=args.gate
+        )
+
+    store = WorkerStore(args.db_dsn, worker_id=args.worker_id)
+    worker = JobWorker(store, factory, limit=args.limit, per_job_limit=args.per_job, style_core_text=style_text)
+    mode = "một lượt" if args.once else "vòng lặp"
+    print(
+        f"worker {args.worker_id}: {mode} (limit {args.limit}, mỗi job {args.per_job})"
+        + (" — client giả" if args.fake or not args.pool_config else "")
+    )
+    if args.once:
+        report = worker.run_once()
+        print(
+            f"đã xử lý {report['claimed']} task" + (f", thu hồi {report['reclaimed']}" if report["reclaimed"] else "")
+        )
+        for item in report["results"]:
+            print("  ", item)
+        return 0
+    worker.run_forever(poll_s=args.poll, idle_exit_after=args.idle_exit or None)
+    return 0
+
+
+def cmd_db(args: argparse.Namespace) -> int:
+    """Tiện ích CSDL: áp baseline Alembic (`migrate`) hoặc chạy schema.sql trực tiếp (`init`)."""
+    if args.db_cmd == "migrate":
+        if not args.db_dsn:
+            print("LỖI: cần --db-dsn (hoặc VISYNTH_DB_DSN)", file=sys.stderr)
+            return 2
+        from visynth_api.migrate import upgrade
+
+        upgrade(args.db_dsn)
+        print("đã chạy Alembic tới head")
+        return 0
+    if args.db_cmd == "init":
+        from pathlib import Path as _Path
+
+        from visynth_api.db import Database, apply_schema
+
+        root = _Path(__file__).resolve().parents[3]
+        db = Database(args.db_dsn)
+        apply_schema(db, str(root / "docs" / "db" / "schema.sql"))
+        db.close()
+        print("đã áp docs/db/schema.sql")
+        return 0
+    if args.db_cmd == "ping":
+        from visynth_api.db import Database
+
+        db = Database(args.db_dsn, min_size=0, max_size=1)
+        print("server_version:", db.scalar("SELECT current_setting('server_version')"))
+        db.close()
+        return 0
+    print("LỖI: chưa hỗ trợ", file=sys.stderr)
+    return 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="visynth", description="ViSynth — prototype CLI (M0)")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -1155,6 +1239,33 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--json", action="store_true")
     q.add_argument("--out")
     q.set_defaults(func=cmd_style_compare)
+
+    w = sub.add_parser("worker", help="Worker production (M1): hàng đợi task PostgreSQL + pipeline P0–P8")
+    w.add_argument("--db-dsn", help="chuỗi kết nối PostgreSQL (hoặc VISYNTH_DB_DSN)")
+    w.add_argument("--worker-id", default=os.environ.get("VISYNTH_WORKER_ID", "worker-1"))
+    w.add_argument("--limit", type=int, default=1, help="số task nhận mỗi lượt")
+    w.add_argument("--per-job", type=int, default=1, help="số task chạy song song cho một job")
+    w.add_argument("--once", action="store_true", help="chạy một lượt rồi thoát (dùng cho cron/test)")
+    w.add_argument("--poll", type=float, default=2.0)
+    w.add_argument("--idle-exit", type=float, default=0.0, help="tự thoát sau N giây hàng đợi trống (0 = chạy mãi)")
+    w.add_argument("--fake", action="store_true", help="dùng client giả (dev/test)")
+    w.add_argument("--pool-config", help="chạy LLM thật bằng pool_config này")
+    w.add_argument("--ledger")
+    w.add_argument("--gate", choices=["dev", "A", "B", "C"], default="dev")
+    w.add_argument("--style-core", help="biên dịch lõi văn phong đã duyệt cho mọi job")
+    w.add_argument("--store", help="tệp kho lõi văn phong")
+    w.set_defaults(func=cmd_worker)
+
+    d = sub.add_parser("db", help="CSDL (M1): baseline Alembic, áp schema, kiểm tra kết nối")
+    ds = d.add_subparsers(dest="db_cmd", required=True)
+    for name, helptext in (
+        ("migrate", "chạy Alembic tới head (baseline = docs/db/schema.sql)"),
+        ("init", "áp thẳng docs/db/schema.sql"),
+        ("ping", "kiểm tra kết nối"),
+    ):
+        q = ds.add_parser(name, help=helptext)
+        q.add_argument("--db-dsn", default=os.environ.get("VISYNTH_DB_DSN", ""))
+        q.set_defaults(func=cmd_db)
 
     gl = sub.add_parser("glossary", help="Glossary chuẩn (SPEC §19.5): P13, hàng đợi duyệt, phát hành")
     gs = gl.add_subparsers(dest="glossary_cmd", required=True)

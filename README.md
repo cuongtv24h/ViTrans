@@ -119,6 +119,35 @@ visynth glossary publish --by ban --summary "v1"           # chỉ mục confirm
 
 Không có khoá? Thêm `--demo` để chạy khô toàn bộ đường ống bằng đề xuất giả (chỉ kiểm đường ống, **không phải đề xuất thật**).
 
+## API + worker trên PostgreSQL (M1)
+
+Backend lõi chạy khép kín: API FastAPI ghi thẳng CSDL thật, worker nhận task theo lease rồi chạy pipeline.
+
+```bash
+# 1) CSDL: Alembic (baseline = docs/db/schema.sql)
+export VISYNTH_DB_DSN="postgresql://visynth:...@localhost:5432/visynth"
+visynth db migrate            # hoặc: visynth db ping
+
+# 2) API (ấn /docs để xem OpenAPI)
+export VISYNTH_SESSION_SECRET="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+uvicorn visynth_api.app:build_app --factory --host 0.0.0.0 --port 8000
+
+# 3) Worker: chạy thật qua pool, hoặc --fake để chạy không tốn token
+visynth worker --once --pool-config pool_config.json          # thật
+visynth worker --once --fake                                  # chạy khô (dev/test)
+
+# 4) Luồng người dùng: đăng ký (mã mời hoặc VISYNTH_OPEN_SIGNUP=1) → tải tài liệu → POST /jobs → SSE
+```
+
+Test trên PostgreSQL thật (không cần cài PostgreSQL: dùng `pgserver`, hoặc trỏ `VISYNTH_TEST_DSN` vào CSDL thử):
+
+```bash
+make test-db        # tests/test_db_schema.py + tests/test_api_m1.py
+```
+
+Đăng nhập ở M1 là **email + mật khẩu nội bộ** (bảng `local_credentials`, scrypt) để chạy được khép kín
+trước khi nối Google OAuth + email OTP (M2) — ghi ở `docs/BUILD_PLAN.md` mục tiến độ M1.
+
 ## Kiểm tra
 
 ```bash

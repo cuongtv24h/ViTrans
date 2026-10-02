@@ -24,7 +24,7 @@ from visynth.checks.report import (
 from visynth.estimate import report_budget_words
 from visynth.extract.model import Extraction, Paragraph
 from visynth.levelpolicy import level_policy
-from visynth.llm.base import LLMClient, LLMError, LLMRequest
+from visynth.llm.base import RETRYABLE, LLMClient, LLMError, LLMRequest
 from visynth.pipeline.models import (
     Block,
     JobOptions,
@@ -63,7 +63,15 @@ MAX_SOURCE_PARAGRAPHS_PER_CALL = 60
 
 
 class PipelineError(RuntimeError):
-    """Lỗi không tự phục hồi được ở tầng pipeline (M1 sẽ đổi sang `defer_task`/đổi deployment)."""
+    """Lỗi ở tầng pipeline.
+
+    `retryable=True` khi nguyên nhân là lỗi tạm thời của nhà cung cấp (`llm.base.RETRYABLE`):
+    worker sẽ đặt task lại `pending` với backoff và thử lại, thay vì đánh job `failed` ngay.
+    """
+
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        self.retryable = retryable
 
 
 class Pipeline:
@@ -126,8 +134,8 @@ class Pipeline:
         try:
             resp = self.client.complete(req)
         except LLMError as exc:
-            self.result.emit("warning", code="llm_error", prompt=prompt.prompt_id, kind=exc.outcome.kind)
-            raise PipelineError(f"{prompt.prompt_id}: {exc}") from exc
+            self.result.emit("warning", code="llm_error", prompt=prompt.prompt_id, outcome_kind=exc.outcome.kind)
+            raise PipelineError(f"{prompt.prompt_id}: {exc}", retryable=exc.outcome.kind in RETRYABLE) from exc
         self.result.stats_llm.add(prompt.prompt_id, resp.outcome.tokens_in, resp.outcome.tokens_out)
         if expected is None:
             return resp.text.strip(), prompt
