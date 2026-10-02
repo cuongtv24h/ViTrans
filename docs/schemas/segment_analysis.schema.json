@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/segment_analysis.schema.json",
+  "title": "SegmentAnalysis",
+  "description": "Đầu ra của prompt P2_unit_extractor cho MỘT segment: nhãn vai trò của từng đoạn + danh sách 'đơn vị tri thức' có bằng chứng nguyên văn. Đây là 'bản kê khai khái niệm' làm nền cho bước viết và kiểm chứng.",
+  "type": "object",
+  "properties": {
+    "segment_id": { "$ref": "common.schema.json#/$defs/segmentId" },
+    "segment_summary_vi": { "type": "string", "maxLength": 900 },
+    "paragraph_labels": {
+      "type": "array",
+      "description": "Phủ kín mọi pid của segment bằng các khoảng liên tiếp; mỗi khoảng có một nhãn.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from_pid": { "$ref": "common.schema.json#/$defs/pid" },
+          "to_pid": { "$ref": "common.schema.json#/$defs/pid" },
+          "label": { "$ref": "common.schema.json#/$defs/paragraphLabel" }
+        },
+        "required": ["from_pid", "to_pid", "label"],
+        "additionalProperties": false
+      }
+    },
+    "units": { "type": "array", "maxItems": 120, "items": { "$ref": "#/$defs/unit" } },
+    "new_terms": {
+      "type": "array",
+      "maxItems": 15,
+      "description": "Thuật ngữ chuyên ngành xuất hiện trong segment nhưng CHƯA có trong glossary; dùng để bổ sung glossary.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source_term": { "type": "string", "maxLength": 120 },
+          "target_term": { "type": "string", "maxLength": 160 }
+        },
+        "required": ["source_term", "target_term"],
+        "additionalProperties": false
+      }
+    },
+    "quality_flags": {
+      "type": "array",
+      "maxItems": 6,
+      "items": { "type": "string", "enum": ["ocr_noise", "truncated_start", "truncated_end", "speaker_unclear", "foreign_language_passages", "other"] }
+    }
+  },
+  "required": ["segment_id", "segment_summary_vi", "paragraph_labels", "units", "new_terms", "quality_flags"],
+  "additionalProperties": false,
+  "$defs": {
+    "unit": {
+      "type": "object",
+      "properties": {
+        "local_id": { "$ref": "common.schema.json#/$defs/localUnitId" },
+        "type": { "$ref": "common.schema.json#/$defs/unitType" },
+        "importance": { "$ref": "common.schema.json#/$defs/importance" },
+        "title_vi": { "type": "string", "maxLength": 140 },
+        "statement_vi": { "type": "string", "maxLength": 900 },
+        "topics": { "type": "array", "items": { "type": "string", "maxLength": 60 }, "maxItems": 5 },
+        "evidence": { "type": "array", "minItems": 1, "maxItems": 3, "items": { "$ref": "common.schema.json#/$defs/evidence" } },
+        "numbers": { "type": "array", "maxItems": 12, "items": { "$ref": "common.schema.json#/$defs/numberRef" } },
+        "terms": { "type": "array", "items": { "type": "string", "maxLength": 120 }, "maxItems": 12 },
+        "relations": {
+          "type": "array",
+          "maxItems": 6,
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "enum": ["depends_on", "contrasts", "elaborates", "part_of"] },
+              "target_local_id": { "$ref": "common.schema.json#/$defs/localUnitId" }
+            },
+            "required": ["type", "target_local_id"],
+            "additionalProperties": false
+          }
+        },
+        "attribution": { "type": "string", "enum": ["author", "third_party", "unclear"] }
+      },
+      "required": ["local_id", "type", "importance", "title_vi", "statement_vi", "topics", "evidence", "numbers", "terms", "relations", "attribution"],
+      "additionalProperties": false
+    }
+  }
+}

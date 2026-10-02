@@ -1,0 +1,10 @@
+{
+  "id": 17,
+  "type": "stage_progress",
+  "job_id": "7b1f3c0e-5d0a-4f64-9a52-0c2f1f6a9e11",
+  "ts": "2026-10-02T09:15:30Z",
+  "stage": "map",
+  "progress": { "done": 6, "total": 15, "pct": 40 },
+  "message_vi": "Đang kê khai khái niệm: 6/15 đoạn",
+  "data": { "tokens_in": 52110, "tokens_out": 9120 }
+}

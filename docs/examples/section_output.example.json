@@ -1,0 +1,16 @@
+{
+  "section_id": "S03",
+  "blocks": [
+    {
+      "type": "paragraph",
+      "markdown_vi": "Theo diễn giả, Cổng 55 và Cổng 49 được nối với nhau qua cơ chế truyền di truyền: điều mang trong Cổng 55 biểu hiện qua cách Cổng 49 phản ứng với thế giới.",
+      "cites": ["U-0002"]
+    },
+    {
+      "type": "callout",
+      "markdown_vi": "> **Lưu ý:** đây là mô tả theo hệ thống lý thuyết của diễn giả, không phải khẳng định khoa học.",
+      "cites": ["U-0002"]
+    }
+  ],
+  "flags": []
+}

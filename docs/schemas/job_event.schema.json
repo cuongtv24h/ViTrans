@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/job_event.schema.json",
+  "title": "JobEvent",
+  "description": "Sự kiện gửi qua SSE (GET /api/v1/jobs/{id}/events) và lưu ở bảng job_events. Trường 'id' tăng dần để client dùng Last-Event-ID khi kết nối lại.",
+  "type": "object",
+  "properties": {
+    "id": { "type": "integer", "minimum": 1 },
+    "type": {
+      "type": "string",
+      "enum": ["job_queued", "stage_started", "stage_progress", "stage_completed", "awaiting_glossary", "glossary_confirmed", "warning", "credits_update", "job_succeeded", "job_failed", "job_canceled"]
+    },
+    "job_id": { "type": "string", "format": "uuid" },
+    "ts": { "type": "string", "format": "date-time" },
+    "stage": { "$ref": "common.schema.json#/$defs/stage" },
+    "progress": {
+      "type": "object",
+      "properties": {
+        "done": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 },
+        "pct": { "type": "number", "minimum": 0, "maximum": 100 }
+      },
+      "required": ["done", "total", "pct"],
+      "additionalProperties": false
+    },
+    "message_vi": { "type": "string", "maxLength": 300 },
+    "data": { "type": "object" }
+  },
+  "required": ["id", "type", "job_id", "ts"],
+  "additionalProperties": false
+}

@@ -1,0 +1,96 @@
+{
+  "segment_id": "SEG-001",
+  "segment_summary_vi": "Diễn giả giới thiệu Trung tâm Thái dương như trung tâm nhận biết cảm xúc vận hành theo dạng sóng, nêu cơ chế di truyền nối Cổng 55 với Cổng 49, kể một ví dụ đời thường, dự báo chu kỳ Sleeping Phoenix từ năm 2027 và trả lời một câu hỏi về việc ra quyết định.",
+  "paragraph_labels": [
+    { "from_pid": "P000101", "to_pid": "P000101", "label": "admin" },
+    { "from_pid": "P000102", "to_pid": "P000103", "label": "core" },
+    { "from_pid": "P000104", "to_pid": "P000104", "label": "example" },
+    { "from_pid": "P000105", "to_pid": "P000105", "label": "core" },
+    { "from_pid": "P000106", "to_pid": "P000106", "label": "qa" }
+  ],
+  "units": [
+    {
+      "local_id": "u1",
+      "type": "definition",
+      "importance": "core",
+      "title_vi": "Trung tâm Thái dương là trung tâm nhận biết cảm xúc",
+      "statement_vi": "Theo diễn giả, Trung tâm Thái dương (Solar Plexus) là trung tâm của nhận biết cảm xúc và là trung tâm duy nhất trong biểu đồ cơ thể vận hành theo dạng sóng thay vì theo một mẫu ổn định.",
+      "topics": ["Trung tâm Thái dương", "dạng sóng"],
+      "evidence": [{ "pid": "P000102", "quote": "The Solar Plexus is the center of emotional awareness." }],
+      "numbers": [],
+      "terms": ["Solar Plexus"],
+      "relations": [],
+      "attribution": "author"
+    },
+    {
+      "local_id": "u2",
+      "type": "mechanism",
+      "importance": "core",
+      "title_vi": "Cổng 55 và Cổng 49 nối nhau qua truyền di truyền",
+      "statement_vi": "Theo diễn giả, Cổng 55 và Cổng 49 được nối với nhau qua cơ chế truyền di truyền: điều mang trong Cổng 55 biểu hiện qua cách Cổng 49 phản ứng với thế giới.",
+      "topics": ["Cổng 55", "Cổng 49", "di truyền"],
+      "evidence": [{ "pid": "P000103", "quote": "Gate 55 and Gate 49 are connected through genetic transmission" }],
+      "numbers": [
+        { "source_text": "Gate 55", "kind": "identifier" },
+        { "source_text": "Gate 49", "kind": "identifier" }
+      ],
+      "terms": ["Gate"],
+      "relations": [{ "type": "part_of", "target_local_id": "u1" }],
+      "attribution": "author"
+    },
+    {
+      "local_id": "u3",
+      "type": "example",
+      "importance": "supporting",
+      "title_vi": "Ví dụ học viên đổi việc mỗi mùa xuân",
+      "statement_vi": "Diễn giả kể về một học viên đổi việc vào mỗi mùa xuân như minh hoạ cho cách dạng sóng xuất hiện trong đời sống hằng ngày.",
+      "topics": ["dạng sóng", "ví dụ"],
+      "evidence": [{ "pid": "P000104", "quote": "a student who kept changing jobs every spring" }],
+      "numbers": [],
+      "terms": [],
+      "relations": [{ "type": "elaborates", "target_local_id": "u1" }],
+      "attribution": "author"
+    },
+    {
+      "local_id": "u4",
+      "type": "prediction",
+      "importance": "core",
+      "title_vi": "Chu kỳ Sleeping Phoenix bắt đầu từ năm 2027",
+      "statement_vi": "Theo diễn giả, chu kỳ Sleeping Phoenix bắt đầu vào năm 2027 và sẽ thay đổi cách trung tâm này được nhìn nhận chung.",
+      "topics": ["Sleeping Phoenix", "2027"],
+      "evidence": [{ "pid": "P000105", "quote": "The Sleeping Phoenix cycle begins in 2027" }],
+      "numbers": [{ "source_text": "2027", "kind": "year" }],
+      "terms": ["Sleeping Phoenix"],
+      "relations": [],
+      "attribution": "author"
+    },
+    {
+      "local_id": "u5",
+      "type": "qa",
+      "importance": "supporting",
+      "title_vi": "Không né quyết định ở đoạn thấp của sóng, mà chờ sự rõ ràng",
+      "statement_vi": "Được hỏi có nên tránh ra quyết định ở đoạn thấp của sóng hay không, diễn giả trả lời: không phải tránh, mà chờ sự rõ ràng.",
+      "topics": ["ra quyết định", "dạng sóng"],
+      "evidence": [{ "pid": "P000106", "quote": "not avoid, but wait for clarity" }],
+      "numbers": [],
+      "terms": [],
+      "relations": [{ "type": "elaborates", "target_local_id": "u1" }],
+      "attribution": "author"
+    },
+    {
+      "local_id": "u6",
+      "type": "admin",
+      "importance": "minor",
+      "title_vi": "Lời chào và thông báo giải lao",
+      "statement_vi": "Diễn giả chào người nghe và nhắc nhanh về lịch giải lao.",
+      "topics": [],
+      "evidence": [{ "pid": "P000101", "quote": "a quick note about the schedule for the break" }],
+      "numbers": [],
+      "terms": [],
+      "relations": [],
+      "attribution": "author"
+    }
+  ],
+  "new_terms": [{ "source_term": "body graph", "target_term": "biểu đồ cơ thể" }],
+  "quality_flags": []
+}

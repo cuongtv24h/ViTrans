@@ -1,0 +1,9 @@
+{
+  "source_term": "Solar Plexus",
+  "target_term": "Trung tâm Thái dương",
+  "keep_original": true,
+  "case_sensitive": false,
+  "forbidden_variants": ["Đám rối thần kinh mặt trời", "Trung tâm Mặt trời"],
+  "term_type": "concept",
+  "note": "Ví dụ minh hoạ định dạng; cách dịch thực tế do người dùng/Admin quyết định."
+}

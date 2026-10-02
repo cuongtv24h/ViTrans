@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/glossary_entry.schema.json",
+  "title": "GlossaryEntry",
+  "description": "Một mục thuật ngữ (ràng buộc cứng khi dịch). Dùng trong API, trong job_glossary_entries và được đưa vào prompt (sau khi lọc theo thuật ngữ thực sự xuất hiện trong đoạn).",
+  "type": "object",
+  "properties": {
+    "source_term": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "target_term": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "keep_original": {
+      "type": "boolean",
+      "description": "true: ở lần dùng đầu tiên trong toàn báo cáo, ghi kèm thuật ngữ gốc trong ngoặc, ví dụ 'Trung tâm Thái dương (Solar Plexus)'."
+    },
+    "case_sensitive": { "type": "boolean" },
+    "forbidden_variants": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 160 },
+      "maxItems": 10,
+      "description": "Các cách dịch KHÔNG được dùng cho thuật ngữ này (để tránh trôi nghĩa). reference/glossary_lint.py sẽ bắt vi phạm."
+    },
+    "term_type": { "type": "string", "enum": ["concept", "proper_name", "acronym", "title", "unit", "other"] },
+    "note": { "type": "string", "maxLength": 300 }
+  },
+  "required": ["source_term", "target_term", "keep_original", "case_sensitive", "forbidden_variants", "term_type", "note"],
+  "additionalProperties": false
+}

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/faithfulness.schema.json",
+  "title": "FaithfulnessResult",
+  "description": "Đầu ra của prompt P5_faithfulness_verifier: phán quyết trung thực cho từng khối của một mục, đối chiếu với ĐOẠN NGUỒN (không chỉ với đơn vị tri thức do model sinh).",
+  "type": "object",
+  "properties": {
+    "section_id": { "$ref": "common.schema.json#/$defs/sectionId" },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "block_id": { "$ref": "common.schema.json#/$defs/blockId" },
+          "verdict": { "$ref": "common.schema.json#/$defs/verdict" },
+          "issues": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": { "$ref": "common.schema.json#/$defs/issueType" },
+                "detail_vi": { "type": "string", "maxLength": 400 },
+                "source_quote": { "type": ["string", "null"], "maxLength": 300 },
+                "suggested_fix_vi": { "type": ["string", "null"], "maxLength": 500 }
+              },
+              "required": ["type", "detail_vi", "source_quote", "suggested_fix_vi"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["block_id", "verdict", "issues"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["section_id", "results"],
+  "additionalProperties": false
+}

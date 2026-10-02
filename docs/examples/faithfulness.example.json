@@ -1,0 +1,18 @@
+{
+  "section_id": "S03",
+  "results": [
+    { "block_id": "S03.b01", "verdict": "supported", "issues": [] },
+    {
+      "block_id": "S03.b02",
+      "verdict": "unsupported",
+      "issues": [
+        {
+          "type": "fabricated",
+          "detail_vi": "Khối này thêm một lời cảnh báo mà các đoạn nguồn được trích dẫn không hề nêu.",
+          "source_quote": null,
+          "suggested_fix_vi": "Xoá khối này, hoặc để hệ thống tự sinh cảnh báo AI ở đầu/cuối báo cáo."
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "version": 1,
+  "declarations": [
+    {
+      "provider": {
+        "preset": "gemini"
+      },
+      "tier": "free",
+      "group_mode": "per_key",
+      "keys": "acc1|AIzaEXAMPLEexampleEXAMPLEexample0001, acc2|AIzaEXAMPLEexampleEXAMPLEexample0002, acc3|AIzaEXAMPLEexampleEXAMPLEexample0003",
+      "limits": {
+        "rpm": 10,
+        "tpm": 250000,
+        "rpd": 250,
+        "tpd": null,
+        "concurrency": 3
+      },
+      "models": [
+        {
+          "model_id": "gemini-3.8-flash",
+          "quality": {
+            "json": 0.95,
+            "vi_write": 0.85,
+            "long_context": 0.9
+          }
+        }
+      ],
+      "risk_ack": [
+        "multi_account_risk"
+      ],
+      "validate_keys": true,
+      "note": "Ví dụ minh hoạ: ba tài khoản Google, mỗi khoá một dự án riêng. Số hạn mức là GIẢ ĐỊNH, hãy chép số thật từ AI Studio."
+    },
+    {
+      "provider": {
+        "preset": "gemini"
+      },
+      "tier": "paid",
+      "group_mode": "single_group",
+      "group_prefix": "gemini-paid",
+      "keys": "AIzaEXAMPLEexampleEXAMPLEexample0009",
+      "limits": {
+        "rpm": 300,
+        "tpm": 2000000,
+        "rpd": null,
+        "tpd": null,
+        "concurrency": 12
+      },
+      "models": [
+        {
+          "model_id": "gemini-3.8-flash",
+          "quality": {
+            "json": 0.95,
+            "vi_write": 0.85,
+            "long_context": 0.9
+          }
+        }
+      ]
+    },
+    {
+      "provider": {
+        "preset": "custom",
+        "id": "provider-c",
+        "display_name": "Nhà cung cấp C (chuẩn OpenAI)",
+        "base_url": "https://api.provider-c.example/v1"
+      },
+      "tier": "free",
+      "data_policy": "unknown",
+      "group_mode": "per_key",
+      "keys": "ak_example_account_one_0000000001\nak_example_account_two_0000000002",
+      "limits": {
+        "rpm": 20,
+        "tpm": 60000,
+        "rpd": 1000,
+        "tpd": null,
+        "concurrency": 2
+      },
+      "limits_scope": "group",
+      "models": [
+        {
+          "model_id": "large-chat-v1",
+          "ctx_in": 131072,
+          "max_out": 8192,
+          "structured": "json_object",
+          "tokenizer_factor": 1.25,
+          "quality": {
+            "json": 0.9,
+            "vi_write": 0.7
+          }
+        }
+      ],
+      "risk_ack": [
+        "multi_account_risk"
+      ]
+    }
+  ]
+}

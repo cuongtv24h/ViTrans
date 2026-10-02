@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/recipe_config.schema.json",
+  "title": "RecipeConfig",
+  "description": "Cấu hình của một 'Công thức' (recipe): gói tham số để mọi người dùng cùng một chuẩn đầu ra. Công thức KHÔNG chứa prompt hệ thống; người dùng/Admin chỉ chỉnh tham số và gợi ý, còn prompt do hệ thống kiểm soát (chống lạm dụng chi phí và prompt injection).",
+  "type": "object",
+  "properties": {
+    "level": {
+      "$ref": "common.schema.json#/$defs/level"
+    },
+    "target_lang": {
+      "$ref": "common.schema.json#/$defs/langCode"
+    },
+    "glossary_ids": {
+      "type": "array",
+      "maxItems": 5,
+      "description": "Danh sách glossary theo thứ tự ưu tiên giảm dần (mục đứng trước ghi đè mục đứng sau). Thường: [glossary cá nhân, glossary chuẩn của hệ thống].",
+      "items": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "report_options": {
+      "type": "object",
+      "properties": {
+        "include_summary": {
+          "type": "boolean"
+        },
+        "include_facts_table": {
+          "type": "boolean"
+        },
+        "include_glossary_appendix": {
+          "type": "boolean"
+        },
+        "include_scope_note": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "include_summary",
+        "include_facts_table",
+        "include_glossary_appendix",
+        "include_scope_note"
+      ],
+      "additionalProperties": false
+    },
+    "planner_hints": {
+      "type": "string",
+      "maxLength": 1500,
+      "description": "Gợi ý cấu trúc báo cáo cho P3 (ví dụ thứ tự các mục)."
+    },
+    "custom_instructions": {
+      "type": "string",
+      "maxLength": 1000,
+      "description": "Sở thích văn phong/cấu trúc của người dùng; được đặt trong khối ưu tiên thấp, không bao giờ ghi đè quy tắc trung thực hay schema."
+    },
+    "style_core_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "uuid",
+      "description": "Lõi văn phong gắn với công thức; null = lõi mặc định trung tính. Nội dung lõi do người duyệt quyết định (SPEC §19)."
+    },
+    "style_core_pin": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Phiên bản semver được ghim; null = phiên bản đã duyệt mới nhất tại thời điểm tạo job (job luôn chụp lại phiên bản đã dùng)."
+    },
+    "privacy_class": {
+      "type": "string",
+      "enum": [
+        "standard",
+        "private"
+      ],
+      "description": "standard: được dùng nhóm hạn mức miễn phí (nhà cung cấp có thể dùng nội dung để cải thiện sản phẩm); private: chỉ nhóm no_training (SPEC §17.4)."
+    }
+  },
+  "required": [
+    "level",
+    "target_lang",
+    "glossary_ids",
+    "style_core_id",
+    "style_core_pin",
+    "privacy_class",
+    "report_options",
+    "planner_hints",
+    "custom_instructions"
+  ],
+  "additionalProperties": false
+}

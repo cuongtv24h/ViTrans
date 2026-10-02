@@ -1,0 +1,332 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/style_core.schema.json",
+  "title": "StyleCore",
+  "description": "Nội dung một phiên bản Lõi văn phong: giọng văn, chính sách thuật ngữ, định dạng, quy tắc và ví dụ mẫu cho MỘT lĩnh vực. Đây là DỮ LIỆU có phiên bản do AI đề xuất và người duyệt (HITL) quyết định; spec không áp đặt nội dung. Chỉ điều chỉnh cách diễn đạt, không bao giờ ghi đè quy tắc bất biến (trung thực, giữ nguyên số liệu/tên/ID, schema đầu ra).",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": [
+        "1"
+      ]
+    },
+    "name_vi": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "summary_vi": {
+      "type": "string",
+      "maxLength": 600
+    },
+    "domain": {
+      "type": "string",
+      "maxLength": 60
+    },
+    "locale": {
+      "$ref": "common.schema.json#/$defs/langCode"
+    },
+    "voice": {
+      "type": "object",
+      "properties": {
+        "register": {
+          "type": "string",
+          "enum": [
+            "unspecified",
+            "formal",
+            "neutral",
+            "conversational",
+            "academic"
+          ]
+        },
+        "notes_vi": {
+          "type": "string",
+          "maxLength": 800
+        }
+      },
+      "required": [
+        "register",
+        "notes_vi"
+      ],
+      "additionalProperties": false
+    },
+    "terminology_policy": {
+      "type": "object",
+      "description": "'unspecified' = để glossary quyết định theo từng mục (keep_original) và không áp thêm chính sách.",
+      "properties": {
+        "first_use": {
+          "type": "string",
+          "enum": [
+            "unspecified",
+            "target_with_original",
+            "target_only",
+            "original_only"
+          ]
+        },
+        "unknown_terms": {
+          "type": "string",
+          "enum": [
+            "unspecified",
+            "flag_for_review",
+            "translate_with_original",
+            "keep_original"
+          ]
+        },
+        "proper_names": {
+          "type": "string",
+          "enum": [
+            "unspecified",
+            "keep_original",
+            "translate_known_forms"
+          ]
+        },
+        "notes_vi": {
+          "type": "string",
+          "maxLength": 600
+        }
+      },
+      "required": [
+        "first_use",
+        "unknown_terms",
+        "proper_names",
+        "notes_vi"
+      ],
+      "additionalProperties": false
+    },
+    "formatting": {
+      "type": "object",
+      "properties": {
+        "quotes": {
+          "type": "string",
+          "enum": [
+            "unspecified",
+            "curly",
+            "straight"
+          ]
+        },
+        "lists": {
+          "type": "string",
+          "enum": [
+            "unspecified",
+            "bullets",
+            "numbered"
+          ]
+        },
+        "numbers": {
+          "type": "string",
+          "enum": [
+            "unspecified",
+            "vi_decimal_comma",
+            "keep_source"
+          ]
+        },
+        "notes_vi": {
+          "type": "string",
+          "maxLength": 600
+        }
+      },
+      "required": [
+        "quotes",
+        "lists",
+        "numbers",
+        "notes_vi"
+      ],
+      "additionalProperties": false
+    },
+    "rules": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^R[0-9]{2,3}$"
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "must",
+              "should",
+              "may"
+            ]
+          },
+          "applies_to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "glossary",
+                "map",
+                "consolidate",
+                "write",
+                "translate",
+                "repair",
+                "assemble"
+              ]
+            },
+            "description": "Rỗng = mọi giai đoạn."
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "human",
+              "ai"
+            ]
+          },
+          "reviewed": {
+            "type": "boolean",
+            "description": "Người duyệt đã xem và xác nhận. Quy tắc origin = ai mà reviewed = false chặn việc duyệt phiên bản."
+          },
+          "confidence": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 1
+          },
+          "rationale_vi": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "severity",
+          "applies_to",
+          "origin",
+          "reviewed",
+          "confidence",
+          "rationale_vi"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "exemplars": {
+      "type": "array",
+      "maxItems": 12,
+      "description": "Cặp nguồn -> đích mẫu do người chọn hoặc xác nhận. Dùng làm ví dụ trong prompt và làm few-shot cho model dịch máy.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^E[0-9]{2,3}$"
+          },
+          "source": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 600
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 800
+          },
+          "note_vi": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "applies_to": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "glossary",
+                "map",
+                "consolidate",
+                "write",
+                "translate",
+                "repair",
+                "assemble"
+              ]
+            }
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "human",
+              "ai"
+            ]
+          },
+          "reviewed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "source",
+          "target",
+          "note_vi",
+          "applies_to",
+          "origin",
+          "reviewed"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "glossary_refs": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "properties": {
+          "glossary_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pin": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "description": "Số hiệu bản phát hành; null = bản mới nhất."
+          }
+        },
+        "required": [
+          "glossary_id",
+          "pin"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "compiled_max_chars": {
+          "type": "integer",
+          "minimum": 500,
+          "maximum": 12000
+        }
+      },
+      "required": [
+        "compiled_max_chars"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "name_vi",
+    "summary_vi",
+    "domain",
+    "locale",
+    "voice",
+    "terminology_policy",
+    "formatting",
+    "rules",
+    "exemplars",
+    "glossary_refs",
+    "limits"
+  ],
+  "additionalProperties": false
+}

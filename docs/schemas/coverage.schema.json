@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/coverage.schema.json",
+  "title": "CoverageResult",
+  "description": "Đầu ra của prompt P6_coverage_checker: với mỗi đơn vị cốt lõi, báo cáo có diễn đạt ý đó không và ở khối nào.",
+  "type": "object",
+  "properties": {
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "unit_id": { "$ref": "common.schema.json#/$defs/unitId" },
+          "covered": { "type": "string", "enum": ["yes", "partial", "no"] },
+          "block_id": { "type": ["string", "null"], "maxLength": 16 },
+          "note_vi": { "type": ["string", "null"], "maxLength": 300 }
+        },
+        "required": ["unit_id", "covered", "block_id", "note_vi"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["results"],
+  "additionalProperties": false
+}

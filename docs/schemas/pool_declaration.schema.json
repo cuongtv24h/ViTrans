@@ -1,0 +1,373 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/pool_declaration.schema.json",
+  "title": "PoolDeclaration",
+  "description": "Khai báo rút gọn để nhập nhà cung cấp và khoá vào LLM Pool (SPEC §17.14): khai thông tin chung MỘT lần rồi dán cả chuỗi khoá cách nhau bằng dấu phẩy. Hệ thống biên dịch thành pool_config (reference/pool_declare.py). Khoá chỉ đi qua tài liệu này một lần, được mã hoá ngay khi áp dụng và không bao giờ có trong cấu hình xuất ra.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "declarations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 20,
+      "items": {
+        "$ref": "#/$defs/declaration"
+      }
+    }
+  },
+  "required": [
+    "version",
+    "declarations"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "limits": {
+      "type": "object",
+      "properties": {
+        "rpm": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "tpm": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "rpd": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "tpd": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "concurrency": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "Giới hạn do nhà cung cấp công bố; bỏ trống hoặc null = chưa biết. Không khai thì dùng mức bảo thủ khởi điểm (5 yêu cầu/phút, 1 lời gọi đồng thời)."
+    },
+    "model": {
+      "type": "object",
+      "description": "Một model của nhà cung cấp. Chỉ model_id là bắt buộc; thiếu trường nào thì dùng mặc định bảo thủ (và có cảnh báo), trừ khi model là mặc định của preset.",
+      "properties": {
+        "model_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "Tên model đúng như nhà cung cấp yêu cầu trong lời gọi API."
+        },
+        "ctx_in": {
+          "type": "integer",
+          "minimum": 1024,
+          "description": "Cửa sổ ngữ cảnh tối đa (token vào + ra)."
+        },
+        "max_out": {
+          "type": "integer",
+          "minimum": 256
+        },
+        "structured": {
+          "type": "string",
+          "enum": [
+            "none",
+            "json_object",
+            "json_schema"
+          ],
+          "description": "Mức hỗ trợ JSON của model; không chắc thì để none (an toàn: bậc thang prompt-only)."
+        },
+        "vision": {
+          "type": "boolean"
+        },
+        "pdf": {
+          "type": "boolean"
+        },
+        "tokenizer_factor": {
+          "type": "number",
+          "minimum": 0.3,
+          "maximum": 4
+        },
+        "strong": {
+          "type": "boolean",
+          "description": "Đủ mạnh cho profile writer, verifier, ocr, curator (gắn thẻ 'strong'). Vẫn phải qua điểm chất lượng của profile."
+        },
+        "tags": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9_-]{1,30}$"
+          }
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "rpm": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "tpm": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "rpd": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "tpd": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "concurrency": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
+          },
+          "additionalProperties": false,
+          "description": "Giới hạn do nhà cung cấp công bố; bỏ trống hoặc null = chưa biết. Không khai thì dùng mức bảo thủ khởi điểm (5 yêu cầu/phút, 1 lời gọi đồng thời)."
+        },
+        "quality": {
+          "type": "object",
+          "description": "Điểm chất lượng 0-1 nếu bạn tự đo hoặc tự chịu trách nhiệm; bỏ trống thì deployment chỉ phục vụ profile không đòi chất lượng cho tới khi chạy kiểm định (probe).",
+          "properties": {
+            "json": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "vi_write": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "long_context": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "price_key": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Khoá trong llm_prices; cần cho tier paid để tính tiền thật."
+        },
+        "shadow_price_key": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Khoá giá tham chiếu để tính chi phí bóng; mặc định gemini-3.8-flash."
+        }
+      },
+      "required": [
+        "model_id"
+      ],
+      "additionalProperties": false
+    },
+    "declaration": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "object",
+          "description": "Nhà cung cấp. preset 'gemini' điền sẵn địa chỉ, giao thức, múi giờ đặt lại hạn mức, cách đếm TPM và model mặc định; 'custom' (chuẩn OpenAI Chat Completions) cần id và base_url. Bỏ trống khi dùng clone_from_group.",
+          "properties": {
+            "preset": {
+              "type": "string",
+              "enum": [
+                "gemini",
+                "custom"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{1,59}$"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "openai_compat",
+                "gemini_native"
+              ]
+            },
+            "base_url": {
+              "type": "string",
+              "pattern": "^https://"
+            },
+            "display_name": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          "additionalProperties": false
+        },
+        "clone_from_group": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Nhân bản cấu hình (nhà cung cấp, gói, chính sách dữ liệu, cờ, hạn mức, các model) từ một nhóm có sẵn; chỉ cần dán khoá mới. Cách nhanh nhất để thêm khoá về sau."
+        },
+        "tier": {
+          "type": "string",
+          "enum": [
+            "free",
+            "trial",
+            "paid",
+            "self_hosted"
+          ]
+        },
+        "data_policy": {
+          "type": "string",
+          "enum": [
+            "no_training",
+            "may_train",
+            "unknown"
+          ],
+          "description": "Nhà cung cấp có dùng nội dung gửi lên để huấn luyện hay không. Không khai thì dùng mặc định của preset hoặc 'unknown' (coi như có dùng)."
+        },
+        "group_mode": {
+          "type": "string",
+          "enum": [
+            "per_key",
+            "single_group"
+          ],
+          "description": "per_key (mặc định): mỗi khoá là một tài khoản/dự án riêng, tức một nhóm hạn mức riêng; khoá cùng nhãn (nhãn|khoá) thì chung nhóm. single_group: mọi khoá thuộc CÙNG một tài khoản/dự án, chung hạn mức."
+        },
+        "group_prefix": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{1,59}$",
+          "description": "Tiền tố id nhóm, mặc định '<id nhà cung cấp>-<gói>'."
+        },
+        "keys": {
+          "type": [
+            "string",
+            "array"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Danh sách khoá, cách nhau bằng dấu phẩy, chấm phẩy, xuống dòng hoặc khoảng trắng. Dạng 'nhãn|khoá' để chỉ khoá nào cùng tài khoản. Chấp nhận cả dòng kiểu .env (TEN=khoá)."
+        },
+        "limits": {
+          "$ref": "#/$defs/limits"
+        },
+        "limits_scope": {
+          "type": "string",
+          "enum": [
+            "deployment",
+            "group"
+          ],
+          "description": "deployment: hạn mức tính riêng theo model (Gemini). group: tính chung cả tài khoản (mặc định cho nhà cung cấp tuỳ chỉnh, vì an toàn hơn)."
+        },
+        "models": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/model"
+          }
+        },
+        "allowed_gates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "dev",
+              "A",
+              "B",
+              "C"
+            ]
+          }
+        },
+        "tos_flags": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "trial_only",
+              "no_personal_data",
+              "multi_account_risk",
+              "no_eea_uk_ch"
+            ]
+          },
+          "description": "Cờ bổ sung; hệ thống tự thêm cờ theo gói và số tài khoản."
+        },
+        "risk_ack": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "multi_account_risk",
+              "trial_only"
+            ]
+          },
+          "description": "XÁC NHẬN chấp nhận rủi ro điều khoản cho các cờ này. Thiếu xác nhận thì khai báo bị từ chối: đây là chỗ bạn khai rằng mình đã đọc và chấp nhận."
+        },
+        "reset_tz": {
+          "type": "string"
+        },
+        "safety_margin": {
+          "type": "number",
+          "minimum": 0.3,
+          "maximum": 1
+        },
+        "day_margin": {
+          "type": "number",
+          "minimum": 0.5,
+          "maximum": 1
+        },
+        "validate_keys": {
+          "type": "boolean",
+          "description": "Sau khi áp dụng, kiểm tra từng khoá bằng lời gọi liệt kê model (không tốn token)."
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 300
+        }
+      },
+      "required": [
+        "keys"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

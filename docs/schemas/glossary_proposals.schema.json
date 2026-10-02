@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/glossary_proposals.schema.json",
+  "title": "GlossaryProposals",
+  "description": "Đầu ra của prompt P13_glossary_harmonizer: hài hoà các đề xuất thuật ngữ từ NHIỀU tài liệu mẫu thành danh sách thống nhất cho glossary chuẩn. Người duyệt xử lý mục needs_human trước. Model chỉ trả ctx_ids; code ghép đoạn trích thật vào 'evidence' (không tin trích dẫn do model viết).",
+  "type": "object",
+  "properties": {
+    "entries": {
+      "type": "array",
+      "maxItems": 400,
+      "items": {
+        "type": "object",
+        "properties": {
+          "source_term": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "target_term": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "keep_original": {
+            "type": "boolean"
+          },
+          "case_sensitive": {
+            "type": "boolean"
+          },
+          "forbidden_variants": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "type": "string",
+              "maxLength": 160
+            }
+          },
+          "term_type": {
+            "type": "string",
+            "enum": [
+              "concept",
+              "proper_name",
+              "acronym",
+              "title",
+              "unit",
+              "other"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 300
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "needs_human": {
+            "type": "boolean"
+          },
+          "question_vi": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 300
+          },
+          "ctx_ids": {
+            "type": "array",
+            "maxItems": 4,
+            "items": {
+              "type": "string",
+              "pattern": "^C[0-9]{3}\\.[0-9]+$"
+            }
+          }
+        },
+        "required": [
+          "source_term",
+          "target_term",
+          "keep_original",
+          "case_sensitive",
+          "forbidden_variants",
+          "term_type",
+          "note",
+          "confidence",
+          "needs_human",
+          "question_vi",
+          "ctx_ids"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "dropped": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "properties": {
+          "source_term": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "reason_vi": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "source_term",
+          "reason_vi"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "entries",
+    "dropped"
+  ],
+  "additionalProperties": false
+}

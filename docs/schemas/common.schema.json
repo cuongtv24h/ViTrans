@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/common.schema.json",
+  "title": "ViSynth common definitions",
+  "description": "Định nghĩa dùng chung. Các schema khác tham chiếu bằng $ref tương đối, ví dụ common.schema.json#/$defs/pid. Lưu ý: khi gửi cho Gemini phải đổi sang 'wire schema' (xem reference/gemini_schema.py) vì Gemini chỉ hỗ trợ một tập con JSON Schema (không có pattern, minLength, maxLength, oneOf...).",
+  "$defs": {
+    "pid": {
+      "type": "string",
+      "pattern": "^P[0-9]{6,}$",
+      "description": "Paragraph ID ổn định của một đoạn văn nguồn, ví dụ P000123."
+    },
+    "unitId": {
+      "type": "string",
+      "pattern": "^U-[0-9]{4,}$",
+      "description": "ID toàn cục của đơn vị tri thức trong một job, ví dụ U-0042. Do hệ thống cấp, không do model tự đặt."
+    },
+    "localUnitId": {
+      "type": "string",
+      "pattern": "^u[0-9]{1,4}$",
+      "description": "ID cục bộ trong một segment (u1, u2, ...). Hệ thống ánh xạ sang unitId sau khi xác thực."
+    },
+    "sectionId": {
+      "type": "string",
+      "pattern": "^S[0-9]{2,}$",
+      "description": "ID mục trong báo cáo, ví dụ S03."
+    },
+    "blockId": {
+      "type": "string",
+      "pattern": "^S[0-9]{2,}\\.b[0-9]{2,}$",
+      "description": "ID khối nội dung trong một mục, ví dụ S03.b02. Do hệ thống cấp sau khi model trả về danh sách khối."
+    },
+    "segmentId": {
+      "type": "string",
+      "pattern": "^SEG-[0-9]{3,}$",
+      "description": "ID đoạn xử lý (segment), ví dụ SEG-007."
+    },
+    "langCode": {
+      "type": "string",
+      "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$",
+      "description": "Mã ngôn ngữ BCP-47, ví dụ en, vi, zh-Hans."
+    },
+    "level": {
+      "type": "string",
+      "enum": [
+        "full_translation",
+        "detailed_synthesis",
+        "deep_synthesis",
+        "executive_brief"
+      ],
+      "description": "Mức cô đọng: dịch đầy đủ / tổng hợp chi tiết / báo cáo chuyên sâu (mặc định) / tóm lược điều hành."
+    },
+    "stage": {
+      "type": "string",
+      "enum": [
+        "extract",
+        "profile",
+        "segment",
+        "glossary",
+        "map",
+        "consolidate",
+        "write",
+        "verify",
+        "repair",
+        "translate",
+        "assemble"
+      ],
+      "description": "Giai đoạn của pipeline."
+    },
+    "paragraphKind": {
+      "type": "string",
+      "enum": [
+        "heading",
+        "body",
+        "list_item",
+        "table",
+        "footnote",
+        "caption",
+        "quote",
+        "code",
+        "speaker_turn",
+        "other"
+      ]
+    },
+    "paragraphLabel": {
+      "type": "string",
+      "enum": [
+        "core",
+        "example",
+        "qa",
+        "anecdote",
+        "aside",
+        "admin"
+      ],
+      "description": "Nhãn vai trò của đoạn: nội dung cốt lõi, ví dụ, hỏi-đáp, giai thoại, lan man, hành chính."
+    },
+    "unitType": {
+      "type": "string",
+      "enum": [
+        "definition",
+        "mechanism",
+        "argument",
+        "procedure",
+        "fact_data",
+        "prediction",
+        "example",
+        "qa",
+        "anecdote",
+        "aside",
+        "admin"
+      ]
+    },
+    "importance": {
+      "type": "string",
+      "enum": [
+        "core",
+        "supporting",
+        "minor"
+      ]
+    },
+    "attributionMode": {
+      "type": "string",
+      "enum": [
+        "attribute_to_author",
+        "neutral_facts"
+      ],
+      "description": "attribute_to_author: luôn quy gán ('theo tác giả...') cho hệ thống/niềm tin/lý thuyết; neutral_facts: sách giáo khoa, tài liệu kỹ thuật, khoa học đã được thiết lập."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "supported",
+        "partially_supported",
+        "unsupported",
+        "contradicted"
+      ]
+    },
+    "issueType": {
+      "type": "string",
+      "enum": [
+        "number_mismatch",
+        "name_mismatch",
+        "date_mismatch",
+        "overreach",
+        "missing_nuance",
+        "fabricated",
+        "term_inconsistency",
+        "attribution_missing",
+        "other"
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "description": "Bằng chứng gốc: pid + trích đoạn NGUYÊN VĂN (cùng ngôn ngữ nguồn, liền mạch, nằm trong đúng đoạn có pid đó). Code kiểm tra bằng reference/quote_verify.py.",
+      "properties": {
+        "pid": {
+          "$ref": "#/$defs/pid"
+        },
+        "quote": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 400
+        }
+      },
+      "required": [
+        "pid",
+        "quote"
+      ],
+      "additionalProperties": false
+    },
+    "numberRef": {
+      "type": "object",
+      "description": "Con số/ngày/mã số xuất hiện trong đơn vị tri thức, ghi đúng như trong nguồn.",
+      "properties": {
+        "source_text": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "year",
+            "date",
+            "quantity",
+            "percent",
+            "ordinal",
+            "identifier",
+            "other"
+          ]
+        }
+      },
+      "required": [
+        "source_text",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "block": {
+      "type": "object",
+      "description": "Một khối nội dung của báo cáo (Markdown) kèm danh sách đơn vị tri thức được trích dẫn.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "paragraph",
+            "bullet_list",
+            "numbered_list",
+            "table",
+            "callout",
+            "subheading"
+          ]
+        },
+        "markdown_vi": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "cites": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/unitId"
+          },
+          "maxItems": 12
+        }
+      },
+      "required": [
+        "type",
+        "markdown_vi",
+        "cites"
+      ],
+      "additionalProperties": false
+    },
+    "privacyClass": {
+      "type": "string",
+      "enum": [
+        "standard",
+        "private"
+      ],
+      "description": "Chế độ riêng tư của job. standard: được dùng nhóm hạn mức miễn phí (nhà cung cấp có thể dùng nội dung để cải thiện sản phẩm, người dùng đã đồng ý riêng). private: chỉ nhóm có data_policy = no_training và không bị cờ trial_only/no_personal_data."
+    },
+    "modelProfile": {
+      "type": "string",
+      "enum": [
+        "fast",
+        "writer",
+        "verifier",
+        "ocr",
+        "curator"
+      ],
+      "description": "Profile logic mà prompt yêu cầu; pool ánh xạ tới deployment cụ thể (SPEC §17)."
+    }
+  }
+}

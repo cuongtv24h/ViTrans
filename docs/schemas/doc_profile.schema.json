@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/doc_profile.schema.json",
+  "title": "DocProfile",
+  "description": "Đầu ra của prompt P0_doc_profiler: hồ sơ nhanh về tài liệu, dùng để chọn cách phân đoạn, chế độ quy gán và gợi ý thuật ngữ.",
+  "type": "object",
+  "properties": {
+    "language_code": { "$ref": "common.schema.json#/$defs/langCode" },
+    "language_confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "doc_type": {
+      "type": "string",
+      "enum": ["book", "lecture_transcript", "interview", "paper", "article", "manual", "notes", "legal", "fiction", "other"]
+    },
+    "domain": { "type": "string", "maxLength": 120 },
+    "domain_tags": { "type": "array", "items": { "type": "string", "maxLength": 60 }, "maxItems": 8 },
+    "title_guess": { "type": ["string", "null"], "maxLength": 200 },
+    "authors_or_speakers": { "type": "array", "items": { "type": "string", "maxLength": 120 }, "maxItems": 10 },
+    "register": { "type": "string", "enum": ["formal", "conversational", "mixed"] },
+    "attribution_mode": { "$ref": "common.schema.json#/$defs/attributionMode" },
+    "structure": {
+      "type": "object",
+      "properties": {
+        "has_toc": { "type": "boolean" },
+        "has_headings": { "type": "boolean" },
+        "has_speaker_turns": { "type": "boolean" },
+        "has_timecodes": { "type": "boolean" },
+        "has_footnotes": { "type": "boolean" },
+        "has_tables": { "type": "boolean" }
+      },
+      "required": ["has_toc", "has_headings", "has_speaker_turns", "has_timecodes", "has_footnotes", "has_tables"],
+      "additionalProperties": false
+    },
+    "content_risks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["tables", "formulas", "code", "poetry", "multilingual", "ocr_noise", "heavy_slang", "many_numbers", "sensitive_topics"]
+      },
+      "maxItems": 9
+    },
+    "recommended_segmentation": {
+      "type": "object",
+      "properties": {
+        "strategy": { "type": "string", "enum": ["by_headings", "by_timecodes", "by_tokens"] },
+        "target_tokens": { "type": "integer", "minimum": 3000, "maximum": 12000 }
+      },
+      "required": ["strategy", "target_tokens"],
+      "additionalProperties": false
+    },
+    "glossary_hint": { "type": "string", "maxLength": 300 },
+    "notes_vi": { "type": "string", "maxLength": 600 }
+  },
+  "required": [
+    "language_code", "language_confidence", "doc_type", "domain", "domain_tags", "title_guess",
+    "authors_or_speakers", "register", "attribution_mode", "structure", "content_risks",
+    "recommended_segmentation", "glossary_hint", "notes_vi"
+  ],
+  "additionalProperties": false
+}

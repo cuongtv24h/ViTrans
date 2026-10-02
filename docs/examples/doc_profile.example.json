@@ -1,0 +1,23 @@
+{
+  "language_code": "en",
+  "language_confidence": 0.99,
+  "doc_type": "lecture_transcript",
+  "domain": "Human Design (bài giảng - fixture)",
+  "domain_tags": ["human design", "body graph", "solar plexus"],
+  "title_guess": "Lecture on the Solar Plexus (fixture)",
+  "authors_or_speakers": ["Speaker A"],
+  "register": "conversational",
+  "attribution_mode": "attribute_to_author",
+  "structure": {
+    "has_toc": false,
+    "has_headings": false,
+    "has_speaker_turns": true,
+    "has_timecodes": true,
+    "has_footnotes": false,
+    "has_tables": false
+  },
+  "content_risks": ["many_numbers", "heavy_slang"],
+  "recommended_segmentation": { "strategy": "by_timecodes", "target_tokens": 6000 },
+  "glossary_hint": "Nhiều thuật ngữ riêng (Cổng, Trung tâm, Kênh, tên chu kỳ); cần glossary thống nhất trước khi dịch.",
+  "notes_vi": "Bản ghi bài giảng tiếng Anh, văn nói, có xen hỏi-đáp. Trình bày một hệ thống lý thuyết nên cần quy gán cho diễn giả."
+}

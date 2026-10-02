@@ -1,0 +1,18 @@
+{
+  "level": "deep_synthesis",
+  "target_lang": "vi",
+  "glossary_ids": [
+    "3f2b8f0e-62d9-4c6b-8d8e-0a3a2a1c9b10"
+  ],
+  "style_core_id": null,
+  "style_core_pin": null,
+  "privacy_class": "standard",
+  "report_options": {
+    "include_summary": true,
+    "include_facts_table": true,
+    "include_glossary_appendix": true,
+    "include_scope_note": true
+  },
+  "planner_hints": "Thứ tự gợi ý: Tổng quan -> Khái niệm nền tảng -> Cơ chế vận hành -> Ví dụ và ứng dụng -> Mốc thời gian và dự báo -> Hạn chế và lưu ý.",
+  "custom_instructions": ""
+}

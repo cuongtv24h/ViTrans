@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/style_core_proposal.schema.json",
+  "title": "StyleCoreProposal",
+  "description": "Đầu ra của prompt P12_style_core_proposer: AI ĐỀ XUẤT nội dung Lõi văn phong dựa trên bản tóm tắt của người phụ trách, tài liệu mẫu, cặp dịch tham chiếu và phản hồi người dùng. Mọi quy tắc đi kèm bằng chứng; điều không có căn cứ phải đưa vào decisions_needed để người duyệt chọn, không được khẳng định. Code ép origin = ai, reviewed = false cho mọi mục khi nhận.",
+  "type": "object",
+  "properties": {
+    "mode": {
+      "type": "string",
+      "enum": [
+        "bootstrap",
+        "refine"
+      ]
+    },
+    "summary_vi": {
+      "type": "string",
+      "maxLength": 800
+    },
+    "proposal": {
+      "$ref": "style_core.schema.json"
+    },
+    "decisions_needed": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^D[0-9]{2}$"
+          },
+          "question_vi": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "options": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 5,
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80
+                },
+                "effect_vi": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "label",
+                "effect_vi"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "recommended": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 80,
+            "description": "label của phương án khuyến nghị; null nếu không có căn cứ để khuyến nghị."
+          },
+          "why_vi": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "required": [
+          "id",
+          "question_vi",
+          "options",
+          "recommended",
+          "why_vi"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 60,
+      "items": {
+        "type": "object",
+        "properties": {
+          "target_id": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Id quy tắc/ví dụ/quyết định được chứng minh, ví dụ R04, E02, D01."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "brief",
+              "sample_excerpt",
+              "reference_pair",
+              "feedback"
+            ]
+          },
+          "source_ref": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Id của đoạn đầu vào đã cấp cho model, ví dụ S03, REF02, FB07. Code tra lại nội dung; model không tự viết trích dẫn."
+          },
+          "note_vi": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "target_id",
+          "kind",
+          "source_ref",
+          "note_vi"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "risks_vi": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "type": "string",
+        "maxLength": 200
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  },
+  "required": [
+    "mode",
+    "summary_vi",
+    "proposal",
+    "decisions_needed",
+    "evidence",
+    "risks_vi",
+    "confidence"
+  ],
+  "additionalProperties": false
+}

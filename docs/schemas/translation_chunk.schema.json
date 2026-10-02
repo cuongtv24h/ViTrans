@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/translation_chunk.schema.json",
+  "title": "TranslationChunk",
+  "description": "Đầu ra của prompt P9_full_translator (mức full_translation): bản dịch căn 1:1 theo pid. Mỗi pid đầu vào phải xuất hiện đúng một lần.",
+  "type": "object",
+  "properties": {
+    "segment_id": { "$ref": "common.schema.json#/$defs/segmentId" },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "pid": { "$ref": "common.schema.json#/$defs/pid" },
+          "vi": { "type": "string", "minLength": 1 }
+        },
+        "required": ["pid", "vi"],
+        "additionalProperties": false
+      }
+    },
+    "notes": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "properties": {
+          "pid": { "$ref": "common.schema.json#/$defs/pid" },
+          "note_vi": { "type": "string", "maxLength": 300 }
+        },
+        "required": ["pid", "note_vi"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["segment_id", "items", "notes"],
+  "additionalProperties": false
+}

@@ -1,0 +1,47 @@
+{
+  "report_title_vi": "Trung tâm Thái dương: cơ chế, di truyền và chu kỳ 2027 (ví dụ)",
+  "report_subtitle_vi": null,
+  "sections": [
+    {
+      "id": "S01",
+      "kind": "summary",
+      "title_vi": "Tóm tắt điều hành",
+      "purpose_vi": "Nêu các ý cốt lõi của toàn bộ tài liệu trong một trang.",
+      "unit_ids": ["U-0001", "U-0002", "U-0004"],
+      "target_words": 120,
+      "format_hint": "mixed"
+    },
+    {
+      "id": "S02",
+      "kind": "body",
+      "title_vi": "Bản chất vận hành theo sóng của Trung tâm Thái dương",
+      "purpose_vi": "Định nghĩa trung tâm, giải thích dạng sóng, minh hoạ bằng ví dụ và cách xử lý quyết định.",
+      "unit_ids": ["U-0001", "U-0003", "U-0005"],
+      "target_words": 180,
+      "format_hint": "narrative"
+    },
+    {
+      "id": "S03",
+      "kind": "body",
+      "title_vi": "Cơ chế di truyền qua Cổng 55 và Cổng 49",
+      "purpose_vi": "Trình bày mối liên kết di truyền giữa hai cổng.",
+      "unit_ids": ["U-0002"],
+      "target_words": 120,
+      "format_hint": "narrative"
+    },
+    {
+      "id": "S04",
+      "kind": "body",
+      "title_vi": "Chu kỳ Sleeping Phoenix và mốc năm 2027",
+      "purpose_vi": "Nêu dự báo về chu kỳ và tác động được diễn giả mô tả.",
+      "unit_ids": ["U-0004"],
+      "target_words": 100,
+      "format_hint": "narrative"
+    }
+  ],
+  "merged_groups": [],
+  "omitted": [],
+  "include_facts_table": true,
+  "facts_unit_ids": ["U-0002", "U-0004"],
+  "include_glossary_appendix": true
+}

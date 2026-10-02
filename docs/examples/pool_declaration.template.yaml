@@ -1,0 +1,62 @@
+# =====================================================================================
+# MẪU KHAI BÁO NHÀ CUNG CẤP VÀ KHOÁ CHO LLM POOL (SPEC §17.14)
+#
+# Cách dùng:  sao chép tệp này, xoá các khối bạn không dùng, điền thông tin, rồi dán vào
+#             Admin > Pool > "Khai báo nhanh"  (hoặc  POST /admin/pool/declare?dry_run=true).
+#             Bước xem trước (dry_run) cho thấy sẽ tạo nhóm, khoá, deployment nào và cảnh báo gì
+#             TRƯỚC khi ghi bất cứ thứ gì.
+#
+# Quy tắc nhập khoá:
+#   - Cách nhau bằng dấu phẩy, chấm phẩy, xuống dòng hoặc khoảng trắng đều được.
+#   - Muốn chỉ rõ các khoá thuộc CÙNG một tài khoản/dự án: ghi  nhãn|khoá  (cùng nhãn = chung hạn mức).
+#   - Dán cả dòng kiểu .env (TEN_BIEN=khoá) cũng được; hệ thống lấy phần sau dấu bằng.
+#   - Khoá chỉ đi qua đây MỘT lần và được mã hoá ngay khi áp dụng. ĐỪNG dán khoá vào chat, email
+#     hay kho mã; ĐỪNG lưu tệp đã điền khoá lại.
+#
+# Những số "hạn mức" dưới đây chỉ là VÍ DỤ. Hãy chép số thật từ bảng điều khiển của nhà cung cấp.
+# Chưa biết thì bỏ trống `limits`: hệ thống dùng mức bảo thủ (5 yêu cầu/phút, 1 lời gọi đồng thời).
+# =====================================================================================
+version: 1
+declarations:
+
+  # ---- A. Gemini, nhiều tài khoản miễn phí ---------------------------------------------------
+  - provider: { preset: gemini }          # điền sẵn địa chỉ, giao thức, múi giờ đặt lại hạn mức, model mặc định
+    tier: free                            # free | trial | paid
+    group_mode: per_key                   # mỗi khoá = một tài khoản/dự án riêng = một nhóm hạn mức riêng
+    keys: "DÁN_KHOÁ_1, DÁN_KHOÁ_2, DÁN_KHOÁ_3"      # hoặc: acc1|khoá, acc2|khoá  (đặt nhãn cho từng tài khoản)
+    limits: { rpm: 10, tpm: 250000, rpd: 250, concurrency: 3 }   # CHÉP SỐ THẬT từ AI Studio
+    risk_ack: [multi_account_risk]        # bạn xác nhận ĐÃ ĐỌC và CHẤP NHẬN rủi ro điều khoản khi gom nhiều tài khoản miễn phí
+    validate_keys: true                   # kiểm tra từng khoá bằng lời gọi liệt kê model (không tốn token)
+
+  # ---- B. Gemini trả phí (chỗ dựa khi tầng miễn phí hết hạn mức) -----------------------------
+  - provider: { preset: gemini }
+    tier: paid
+    group_mode: single_group              # mọi khoá thuộc CÙNG một dự án có thanh toán
+    group_prefix: gemini-paid
+    keys: "DÁN_KHOÁ_TRẢ_PHÍ"
+    limits: { rpm: 300, tpm: 2000000, concurrency: 12 }
+
+  # ---- C. Nhà cung cấp khác theo chuẩn OpenAI Chat Completions --------------------------------
+  - provider:
+      preset: custom
+      id: ten-nha-cung-cap                # chữ thường, số, gạch ngang
+      base_url: "https://DIA-CHI-API/v1"  # xem mục "OpenAI compatibility" trong tài liệu của nhà cung cấp
+      display_name: "Tên hiển thị"
+    tier: free
+    data_policy: unknown                  # no_training | may_train | unknown. Chưa đọc điều khoản thì để unknown (bị coi như có dùng dữ liệu)
+    group_mode: per_key
+    keys: "DÁN_KHOÁ_1, DÁN_KHOÁ_2"
+    limits: { rpm: 20, tpm: 60000, rpd: 1000, concurrency: 2 }
+    limits_scope: group                   # group: hạn mức tính chung cả tài khoản; deployment: tính riêng theo từng model
+    models:
+      - model_id: "ten-model-dung-trong-API"
+        ctx_in: 131072                    # cửa sổ ngữ cảnh (token vào + ra) theo trang model
+        max_out: 8192                     # số token ra tối đa
+        structured: json_object           # none | json_object | json_schema (không chắc: để none)
+        strong: false                     # true nếu đủ mạnh để viết/kiểm chứng báo cáo (vẫn phải qua điểm chất lượng)
+    risk_ack: [multi_account_risk]        # cần vì có từ hai tài khoản miễn phí
+
+  # ---- D. Thêm khoá về sau: nhân bản một nhóm có sẵn, chỉ cần dán khoá mới -------------------
+  - clone_from_group: gemini-free-1
+    keys: "DÁN_KHOÁ_MỚI_1, DÁN_KHOÁ_MỚI_2"
+    risk_ack: [multi_account_risk]

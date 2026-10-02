@@ -1,0 +1,18 @@
+{
+  "_comment": "Tài liệu GIẢ LẬP dùng làm fixture cho mọi ví dụ trong thư mục này. Nội dung do người soạn spec tự viết để minh hoạ định dạng; KHÔNG phản ánh nội dung thật của bất kỳ tác phẩm nào.",
+  "document_id": "00000000-0000-0000-0000-000000000001",
+  "paragraphs": [
+    { "pid": "P000101", "idx": 1, "kind": "speaker_turn", "page_start": 1, "timecode_start_ms": 0,
+      "text": "Welcome back, everyone. Before we start, a quick note about the schedule for the break." },
+    { "pid": "P000102", "idx": 2, "kind": "speaker_turn", "page_start": 1, "timecode_start_ms": 14000,
+      "text": "The Solar Plexus is the center of emotional awareness. It is the only center in the body graph that works in waves rather than in a stable pattern." },
+    { "pid": "P000103", "idx": 3, "kind": "speaker_turn", "page_start": 2, "timecode_start_ms": 61000,
+      "text": "Gate 55 and Gate 49 are connected through genetic transmission: what is carried in Gate 55 is expressed in the way Gate 49 responds to the world." },
+    { "pid": "P000104", "idx": 4, "kind": "speaker_turn", "page_start": 2, "timecode_start_ms": 118000,
+      "text": "I remember a student who kept changing jobs every spring, and that is exactly how the wave shows up in daily life." },
+    { "pid": "P000105", "idx": 5, "kind": "speaker_turn", "page_start": 3, "timecode_start_ms": 175000,
+      "text": "The Sleeping Phoenix cycle begins in 2027, and it will change how this center is perceived collectively." },
+    { "pid": "P000106", "idx": 6, "kind": "speaker_turn", "page_start": 3, "timecode_start_ms": 230000,
+      "text": "Question from the audience: does this mean we should avoid decisions during the low part of the wave? Answer: not avoid, but wait for clarity." }
+  ]
+}

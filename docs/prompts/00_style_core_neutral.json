@@ -1,0 +1,29 @@
+{
+  "schema_version": "1",
+  "name_vi": "Mặc định trung tính (hạt giống kỹ thuật, thay được)",
+  "summary_vi": "Không đặt quan điểm về văn phong. Chỉ áp glossary đã duyệt. Dùng khi công thức chưa gắn Lõi văn phong nào.",
+  "domain": "general",
+  "locale": "vi",
+  "voice": {
+    "register": "unspecified",
+    "notes_vi": ""
+  },
+  "terminology_policy": {
+    "first_use": "unspecified",
+    "unknown_terms": "unspecified",
+    "proper_names": "unspecified",
+    "notes_vi": ""
+  },
+  "formatting": {
+    "quotes": "unspecified",
+    "lists": "unspecified",
+    "numbers": "unspecified",
+    "notes_vi": ""
+  },
+  "rules": [],
+  "exemplars": [],
+  "glossary_refs": [],
+  "limits": {
+    "compiled_max_chars": 6000
+  }
+}

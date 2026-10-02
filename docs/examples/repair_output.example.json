@@ -1,0 +1,26 @@
+{
+  "section_id": "S03",
+  "replace": [
+    {
+      "block_id": "S03.b01",
+      "block": {
+        "type": "paragraph",
+        "markdown_vi": "Theo diễn giả, Cổng 55 và Cổng 49 được nối với nhau qua cơ chế truyền di truyền: điều mang trong Cổng 55 biểu hiện qua cách Cổng 49 phản ứng với thế giới.",
+        "cites": ["U-0002"]
+      }
+    }
+  ],
+  "insert_after": [
+    {
+      "after_block_id": "S03.b01",
+      "block": {
+        "type": "paragraph",
+        "markdown_vi": "Diễn giả chỉ nêu mối liên kết này ở mức mô tả và không đưa thêm điều kiện nào khác.",
+        "cites": ["U-0002"]
+      }
+    }
+  ],
+  "delete": [
+    { "block_id": "S03.b02", "reason_vi": "Câu cảnh báo do model tự thêm, không có trong nguồn." }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "results": [
+    { "unit_id": "U-0001", "covered": "yes", "block_id": "S02.b01", "note_vi": null },
+    { "unit_id": "U-0002", "covered": "yes", "block_id": "S03.b01", "note_vi": null },
+    { "unit_id": "U-0004", "covered": "partial", "block_id": "S04.b01", "note_vi": "Có nêu mốc 2027 nhưng thiếu ý 'thay đổi cách nhìn nhận chung'." }
+  ]
+}

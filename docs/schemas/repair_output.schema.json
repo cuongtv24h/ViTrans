@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/repair_output.schema.json",
+  "title": "RepairOutput",
+  "description": "Đầu ra của prompt P7_repair_writer: các bản vá tối thiểu cho một mục (thay khối, chèn khối, xoá khối). Tách thành ba mảng để tránh oneOf/null khó dùng với structured output.",
+  "type": "object",
+  "properties": {
+    "section_id": { "$ref": "common.schema.json#/$defs/sectionId" },
+    "replace": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "properties": {
+          "block_id": { "$ref": "common.schema.json#/$defs/blockId" },
+          "block": { "$ref": "common.schema.json#/$defs/block" }
+        },
+        "required": ["block_id", "block"],
+        "additionalProperties": false
+      }
+    },
+    "insert_after": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "properties": {
+          "after_block_id": { "type": "string", "maxLength": 16, "description": "blockId hiện có, hoặc 'START' để chèn lên đầu mục." },
+          "block": { "$ref": "common.schema.json#/$defs/block" }
+        },
+        "required": ["after_block_id", "block"],
+        "additionalProperties": false
+      }
+    },
+    "delete": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "properties": {
+          "block_id": { "$ref": "common.schema.json#/$defs/blockId" },
+          "reason_vi": { "type": "string", "maxLength": 240 }
+        },
+        "required": ["block_id", "reason_vi"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["section_id", "replace", "insert_after", "delete"],
+  "additionalProperties": false
+}

@@ -1,0 +1,645 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.example/schemas/pool_config.schema.json",
+  "title": "PoolConfig",
+  "description": "Cấu hình LLM Pool: nhà cung cấp, model, nhóm hạn mức (quota group) kèm khoá, deployment (nhóm x model) và profile logic (fast, writer, verifier, ocr, curator, mt_draft) với các tầng định tuyến. Dùng để nhập/xuất qua Admin API và để seed CSDL. Khoá API KHÔNG bao giờ nằm trong tệp này: chỉ có tham chiếu secret_ref. Mọi con số giới hạn là cấu hình do chủ hệ thống nhập từ bảng điều khiển của nhà cung cấp, không phải hằng số của spec.",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "policy": {
+      "type": "object",
+      "properties": {
+        "priority_reserve": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 0.5,
+          "description": "Phần hạn mức dành riêng cho tác vụ ưu tiên cao/thường; tác vụ 'low' không được dùng phần này."
+        },
+        "lease_ttl_s": {
+          "type": "number",
+          "minimum": 30,
+          "maximum": 3600
+        },
+        "diversity_max_wait_s": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 600
+        },
+        "allow_risk_at_public_gates": {
+          "type": "boolean",
+          "description": "true: chủ hệ thống chấp nhận dùng nhóm gắn multi_account_risk hoặc trial_only ngay cả ở cổng B và C (mặc định false). Dù true, nhóm gắn trial_only/no_personal_data vẫn không bao giờ phục vụ job private."
+        }
+      },
+      "required": [
+        "priority_reserve",
+        "lease_ttl_s",
+        "diversity_max_wait_s",
+        "allow_risk_at_public_gates"
+      ],
+      "additionalProperties": false
+    },
+    "providers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{1,39}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "openai_compat",
+              "gemini_native"
+            ]
+          },
+          "base_url": {
+            "type": "string",
+            "pattern": "^https://"
+          },
+          "display_name": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "quirks": {
+            "type": "object",
+            "properties": {
+              "quota_scope": {
+                "type": "string",
+                "enum": [
+                  "deployment",
+                  "group"
+                ],
+                "description": "'deployment': giới hạn đếm riêng theo từng model (Gemini). 'group': đếm chung cả tài khoản (NVIDIA, OpenRouter)."
+              },
+              "auth_header": {
+                "type": "string",
+                "enum": [
+                  "bearer",
+                  "x-goog-api-key"
+                ]
+              }
+            },
+            "required": [
+              "quota_scope",
+              "auth_header"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "base_url",
+          "display_name",
+          "quirks"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "models": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_./:-]{1,80}$"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model_id": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Tên model đúng như nhà cung cấp yêu cầu trong lời gọi API."
+          },
+          "ctx_in": {
+            "type": "integer",
+            "minimum": 1024,
+            "description": "Cửa sổ ngữ cảnh tối đa (token vào + ra)."
+          },
+          "max_out": {
+            "type": "integer",
+            "minimum": 256
+          },
+          "structured": {
+            "type": "string",
+            "enum": [
+              "none",
+              "json_object",
+              "json_schema"
+            ]
+          },
+          "vision": {
+            "type": "boolean"
+          },
+          "pdf": {
+            "type": "boolean"
+          },
+          "tokenizer_factor": {
+            "type": "number",
+            "minimum": 0.3,
+            "maximum": 4,
+            "description": "Số token của model này trên cùng một văn bản / số token theo thước đo tham chiếu (Gemini). Được hiệu chỉnh tự động từ usage thực tế."
+          },
+          "price_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Khoá trong llm_prices để tính chi phí thật khi price_mode = metered."
+          },
+          "shadow_price_key": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Khoá giá tham chiếu để tính 'chi phí bóng' của deployment miễn phí (giữ trần chi phí job có nghĩa)."
+          },
+          "quality": {
+            "type": "object",
+            "description": "Điểm 0-1 theo bài kiểm định (SPEC §17.9), ví dụ {\"json\": 0.97, \"vi_write\": 0.85}.",
+            "properties": {
+              "json": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "vi_write": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "long_context": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            },
+            "additionalProperties": false
+          },
+          "adapter_options": {
+            "type": "object",
+            "properties": {
+              "max_tokens_param": {
+                "type": "string",
+                "enum": [
+                  "max_tokens",
+                  "max_completion_tokens"
+                ]
+              },
+              "reasoning_param": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "reasoning_effort",
+                  "thinking_level"
+                ]
+              },
+              "strip_think_tags": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "max_tokens_param",
+              "reasoning_param",
+              "strip_think_tags"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "model_id",
+          "ctx_in",
+          "max_out",
+          "structured",
+          "vision",
+          "pdf",
+          "tokenizer_factor",
+          "price_key",
+          "shadow_price_key",
+          "quality",
+          "adapter_options"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "groups": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]{1,60}$"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "free",
+              "trial",
+              "paid",
+              "self_hosted"
+            ]
+          },
+          "data_policy": {
+            "type": "string",
+            "enum": [
+              "no_training",
+              "may_train",
+              "unknown"
+            ],
+            "description": "Nhà cung cấp có dùng nội dung gửi lên để huấn luyện/cải thiện sản phẩm hay không. 'unknown' bị coi như 'may_train'."
+          },
+          "reset_tz": {
+            "type": "string",
+            "description": "Múi giờ IANA nơi hạn mức ngày được đặt lại (Gemini: America/Los_Angeles)."
+          },
+          "tos_flags": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "trial_only",
+                "no_personal_data",
+                "multi_account_risk",
+                "no_eea_uk_ch"
+              ]
+            }
+          },
+          "allowed_gates": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "enum": [
+                "dev",
+                "A",
+                "B",
+                "C"
+              ]
+            }
+          },
+          "safety_margin": {
+            "type": "number",
+            "minimum": 0.3,
+            "maximum": 1,
+            "description": "Hệ số an toàn cho hạn mức theo phút (mặc định 0.85)."
+          },
+          "day_margin": {
+            "type": "number",
+            "minimum": 0.5,
+            "maximum": 1,
+            "description": "Hệ số an toàn cho hạn mức theo ngày (mặc định 0.95)."
+          },
+          "limits": {
+            "$ref": "#/$defs/limits"
+          },
+          "credentials": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9_-]{1,80}$"
+                },
+                "label": {
+                  "type": "string",
+                  "maxLength": 120
+                },
+                "secret_ref": {
+                  "type": "string",
+                  "pattern": "^(env|file|enc):[^\\s]{1,200}$",
+                  "description": "Tham chiếu tới khoá: env:TEN_BIEN, file:/duong/dan, hoặc enc:<id> (mã hoá ở tầng ứng dụng trong CSDL). KHÔNG ghi khoá thật."
+                }
+              },
+              "required": [
+                "id",
+                "label",
+                "secret_ref"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "risk_ack": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "multi_account_risk",
+                "trial_only"
+              ]
+            },
+            "description": "Cờ rủi ro điều khoản mà chủ hệ thống đã xác nhận chấp nhận. Nhóm có cờ trong tos_flags mà thiếu xác nhận tương ứng không được bật (CHECK trong CSDL) và không bao giờ được chọn."
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "label",
+          "tier",
+          "data_policy",
+          "reset_tz",
+          "tos_flags",
+          "allowed_gates",
+          "safety_margin",
+          "day_margin",
+          "limits",
+          "credentials",
+          "enabled",
+          "risk_ack"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "deployments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_./:-]{1,100}$"
+          },
+          "group": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "limits": {
+            "$ref": "#/$defs/limits"
+          },
+          "tpm_basis": {
+            "type": "string",
+            "enum": [
+              "input",
+              "total"
+            ],
+            "description": "Nhà cung cấp tính TPM theo token vào (Gemini) hay tổng vào + ra."
+          },
+          "price_mode": {
+            "type": "string",
+            "enum": [
+              "free",
+              "metered"
+            ]
+          },
+          "weight": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 100
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,30}$"
+            },
+            "maxItems": 12
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "group",
+          "model",
+          "limits",
+          "tpm_basis",
+          "price_mode",
+          "weight",
+          "tags",
+          "enabled"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "$ref": "common.schema.json#/$defs/modelProfile"
+          },
+          "needs": {
+            "type": "object",
+            "properties": {
+              "structured": {
+                "type": "string",
+                "enum": [
+                  "none",
+                  "json_object",
+                  "json_schema"
+                ]
+              },
+              "min_ctx_in": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "vision": {
+                "type": "boolean"
+              },
+              "pdf": {
+                "type": "boolean"
+              },
+              "min_quality": {
+                "type": "object",
+                "properties": {
+                  "json": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "vi_write": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "long_context": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "structured",
+              "min_ctx_in",
+              "vision",
+              "pdf",
+              "min_quality"
+            ],
+            "additionalProperties": false
+          },
+          "tiers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9_-]{1,30}$"
+                },
+                "select": {
+                  "type": "object",
+                  "properties": {
+                    "tags": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "group_tiers": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "free",
+                          "trial",
+                          "paid",
+                          "self_hosted"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "tags",
+                    "group_tiers"
+                  ],
+                  "additionalProperties": false
+                },
+                "strategy": {
+                  "type": "string",
+                  "enum": [
+                    "headroom",
+                    "weighted",
+                    "ordered"
+                  ]
+                },
+                "max_wait_s": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "description": "Chờ tối đa ở tầng này trước khi thử tầng sau; null = chờ vô hạn."
+                }
+              },
+              "required": [
+                "name",
+                "select",
+                "strategy",
+                "max_wait_s"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "name",
+          "needs",
+          "tiers"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "version",
+    "note",
+    "policy",
+    "providers",
+    "models",
+    "groups",
+    "deployments",
+    "profiles"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "limits": {
+      "type": "object",
+      "description": "Giới hạn do nhà cung cấp công bố trong bảng điều khiển; null = không có giới hạn đã biết.",
+      "properties": {
+        "rpm": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "tpm": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "rpd": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "tpd": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "concurrency": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        }
+      },
+      "required": [
+        "rpm",
+        "tpm",
+        "rpd",
+        "tpd",
+        "concurrency"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

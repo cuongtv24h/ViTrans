@@ -1,0 +1,58 @@
+{
+  "entries": [
+    {
+      "source_term": "Solar Plexus",
+      "target_term": "Trung tâm Thái dương",
+      "keep_original": true,
+      "case_sensitive": false,
+      "forbidden_variants": [
+        "Đám rối thần kinh mặt trời"
+      ],
+      "term_type": "concept",
+      "note": "Hai tài liệu cùng đề xuất; loại cách dịch giải phẫu học để tránh trôi nghĩa.",
+      "confidence": 0.82,
+      "needs_human": false,
+      "question_vi": null,
+      "ctx_ids": [
+        "C001.1"
+      ]
+    },
+    {
+      "source_term": "Gate",
+      "target_term": "Cổng",
+      "keep_original": false,
+      "case_sensitive": false,
+      "forbidden_variants": [],
+      "term_type": "concept",
+      "note": "Đơn vị được đánh số; giữ nguyên số khi dịch.",
+      "confidence": 0.9,
+      "needs_human": false,
+      "question_vi": null,
+      "ctx_ids": [
+        "C002.1"
+      ]
+    },
+    {
+      "source_term": "Sleeping Phoenix",
+      "target_term": "Sleeping Phoenix",
+      "keep_original": false,
+      "case_sensitive": true,
+      "forbidden_variants": [],
+      "term_type": "proper_name",
+      "note": "Tên riêng của một chu kỳ; hai tài liệu đề xuất hai cách khác nhau.",
+      "confidence": 0.5,
+      "needs_human": true,
+      "question_vi": "Giữ nguyên tên gốc hay dùng 'Phượng hoàng ngủ'? Hai tài liệu mẫu chưa thống nhất.",
+      "ctx_ids": [
+        "C003.1",
+        "C003.2"
+      ]
+    }
+  ],
+  "dropped": [
+    {
+      "source_term": "wave",
+      "reason_vi": "Từ thông dụng, không cần cố định cách dịch."
+    }
+  ]
+}

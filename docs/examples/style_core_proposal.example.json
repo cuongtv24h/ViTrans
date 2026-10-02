@@ -1,0 +1,148 @@
+{
+  "mode": "bootstrap",
+  "summary_vi": "Đề xuất khởi tạo từ 3 đoạn mẫu và 2 cặp dịch tham chiếu. Chỉ giữ những quy tắc có căn cứ; hai điểm còn mơ hồ được nêu thành câu hỏi cho người duyệt.",
+  "proposal": {
+    "schema_version": "1",
+    "name_vi": "VÍ DỤ MINH HOẠ: bài giảng Human Design EN→VI (bản nháp đang chờ duyệt)",
+    "summary_vi": "Ví dụ về hình dạng của một Lõi văn phong theo lĩnh vực, KHÔNG phải khuyến nghị của spec. Hai mục do AI đề xuất (reviewed = false) chặn việc duyệt cho đến khi người duyệt xác nhận.",
+    "domain": "human-design",
+    "locale": "vi",
+    "voice": {
+      "register": "conversational",
+      "notes_vi": "Giọng giảng bài, rõ ý trước, bóng bẩy sau."
+    },
+    "terminology_policy": {
+      "first_use": "target_with_original",
+      "unknown_terms": "flag_for_review",
+      "proper_names": "keep_original",
+      "notes_vi": ""
+    },
+    "formatting": {
+      "quotes": "curly",
+      "lists": "bullets",
+      "numbers": "keep_source",
+      "notes_vi": ""
+    },
+    "rules": [
+      {
+        "id": "R01",
+        "text": "Câu ngắn đến vừa (thường 15-30 chữ); tách câu dài nhiều mệnh đề.",
+        "severity": "should",
+        "applies_to": [
+          "write",
+          "translate"
+        ],
+        "origin": "human",
+        "reviewed": true,
+        "confidence": null,
+        "rationale_vi": "Văn nói dịch sang văn viết dễ thành câu dài."
+      },
+      {
+        "id": "R02",
+        "text": "Hạn chế cấu trúc bị động kiểu tiếng Anh; chuyển về trật tự câu tự nhiên của tiếng Việt.",
+        "severity": "should",
+        "applies_to": [
+          "write",
+          "translate",
+          "repair"
+        ],
+        "origin": "human",
+        "reviewed": true,
+        "confidence": null,
+        "rationale_vi": ""
+      },
+      {
+        "id": "R03",
+        "text": "Không dùng emoji; không viết hoa tràn lan.",
+        "severity": "must",
+        "applies_to": [],
+        "origin": "human",
+        "reviewed": true,
+        "confidence": null,
+        "rationale_vi": ""
+      },
+      {
+        "id": "R04",
+        "text": "Giữ nhịp văn nói của diễn giả khi dịch lời thoại: câu hỏi vẫn là câu hỏi, lời gọi khán giả vẫn là lời gọi.",
+        "severity": "may",
+        "applies_to": [
+          "translate"
+        ],
+        "origin": "ai",
+        "reviewed": false,
+        "confidence": 0.55,
+        "rationale_vi": "Suy ra từ mẫu: nhiều câu hỏi tu từ và lời nhắn khán giả."
+      }
+    ],
+    "exemplars": [
+      {
+        "id": "E01",
+        "source": "The Solar Plexus is the center of emotional awareness.",
+        "target": "Trung tâm Thái dương (Solar Plexus) là trung tâm của nhận biết cảm xúc.",
+        "note_vi": "Lần đầu dùng thuật ngữ: ghi kèm tiếng gốc.",
+        "applies_to": [
+          "write",
+          "translate"
+        ],
+        "origin": "human",
+        "reviewed": true
+      },
+      {
+        "id": "E02",
+        "source": "Gate 55 and Gate 49 are connected through genetic transmission.",
+        "target": "Cổng 55 và Cổng 49 được nối với nhau qua sự truyền di truyền.",
+        "note_vi": "Giữ nguyên số của cổng.",
+        "applies_to": [
+          "translate"
+        ],
+        "origin": "ai",
+        "reviewed": false
+      }
+    ],
+    "glossary_refs": [
+      {
+        "glossary_id": "3f2b8f0e-62d9-4c6b-8d8e-0a3a2a1c9b10",
+        "pin": null
+      }
+    ],
+    "limits": {
+      "compiled_max_chars": 6000
+    }
+  },
+  "decisions_needed": [
+    {
+      "id": "D01",
+      "question_vi": "Thuật ngữ chưa có trong glossary nên xử lý thế nào ở lần đầu xuất hiện?",
+      "options": [
+        {
+          "label": "Dịch sát nghĩa kèm tiếng gốc",
+          "effect_vi": "Người đọc thấy cả hai, nhưng văn bản dài hơn."
+        },
+        {
+          "label": "Đánh dấu để duyệt, giữ nguyên tiếng gốc",
+          "effect_vi": "An toàn về nghĩa, cần người duyệt xử lý sau."
+        }
+      ],
+      "recommended": "Đánh dấu để duyệt, giữ nguyên tiếng gốc",
+      "why_vi": "Hai cặp tham chiếu đều giữ nguyên thuật ngữ lạ."
+    }
+  ],
+  "evidence": [
+    {
+      "target_id": "R04",
+      "kind": "sample_excerpt",
+      "source_ref": "S02",
+      "note_vi": "Đoạn mẫu có câu hỏi tu từ và lời nhắn khán giả."
+    },
+    {
+      "target_id": "E01",
+      "kind": "reference_pair",
+      "source_ref": "REF01",
+      "note_vi": "Cặp dịch tham chiếu của người phụ trách."
+    }
+  ],
+  "risks_vi": [
+    "Chỉ có 3 đoạn mẫu: chưa đủ để kết luận về văn phong chung của cả lĩnh vực."
+  ],
+  "confidence": 0.6
+}

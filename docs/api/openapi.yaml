@@ -1,0 +1,2627 @@
+openapi: 3.1.0
+info:
+  title: ViSynth API
+  version: 0.3.0
+  description: |
+    API REST của ViSynth (tên tạm). Gốc: /api/v1. Xác thực bằng cookie phiên HttpOnly (web) hoặc Bearer token (giai đoạn 2).
+    Quy ước:
+    - Lỗi theo RFC 9457 (application/problem+json) kèm trường `code` ổn định để client xử lý.
+    - POST /jobs bắt buộc có header `Idempotency-Key` (chống tạo trùng job và trừ tín dụng hai lần).
+    - Tiến độ job qua SSE: GET /jobs/{jobId}/events (hỗ trợ Last-Event-ID).
+    - Hợp đồng dữ liệu chi tiết của prompt/pipeline nằm trong thư mục schemas/.
+servers:
+- {url: /api/v1}
+security:
+- cookieAuth: []
+- bearerAuth: []
+tags:
+- {name: account}
+- {name: documents}
+- {name: jobs}
+- {name: glossaries}
+- {name: recipes}
+- {name: reports}
+- {name: admin}
+- {name: pool}
+- {name: style-cores}
+- {name: curation}
+- {name: public}
+paths:
+  /me:
+    get:
+      tags: [account]
+      operationId: getMe
+      summary: Thông tin người dùng hiện tại, số dư tín dụng, hạn mức
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Me'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /me/consents:
+    post:
+      tags: [account]
+      operationId: recordConsents
+      summary: Ghi các đồng ý RIÊNG (điều khoản, chuyển dữ liệu ra nước ngoài, chế độ Tiết kiệm) và xác nhận từ 18 tuổi. Mỗi đồng ý lưu thời điểm và phiên bản văn bản; chỉ ghi thêm, không tự thu hồi (thu hồi qua xoá tài khoản hoặc chuyển sang chế độ Riêng tư)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tos_version: {type: string, maxLength: 40}
+                consent_cross_border: {type: boolean}
+                consent_shared_processing: {type: boolean}
+                age_confirmed: {type: boolean}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Me'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '422': {$ref: '#/components/responses/Problem'}
+  /credits:
+    get:
+      tags: [account]
+      operationId: getCredits
+      summary: Số dư và sổ cái tín dụng (phân trang)
+      parameters:
+      - {$ref: '#/components/parameters/Cursor'}
+      - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CreditsPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /invites/redeem:
+    post:
+      tags: [account]
+      operationId: redeemInvite
+      summary: Đổi mã mời lấy tín dụng (giới hạn tốc độ nghiêm ngặt; gọi hàm SQL redeem_invite)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: {type: string, pattern: '^[A-Za-z0-9-]{6,32}$'}
+      responses:
+        '200':
+          description: Đã cộng tín dụng
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [credits_granted, balance]
+                properties:
+                  credits_granted: {type: integer}
+                  balance: {type: integer}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+  /documents:
+    get:
+      tags: [documents]
+      operationId: listDocuments
+      summary: Danh sách tài liệu của tôi
+      parameters:
+      - {$ref: '#/components/parameters/Cursor'}
+      - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DocumentPage'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+    post:
+      tags: [documents]
+      operationId: createDocument
+      summary: Tải file lên hoặc dán văn bản. Trả về 202 và bóc tách chạy nền (poll GET /documents/{id} đến khi status = ready).
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, rights_attested]
+              properties:
+                file: {type: string, format: binary, description: 'pdf, docx, doc, txt, md, srt, vtt, epub; tối đa 50 MB'}
+                title: {type: string, maxLength: 200}
+                rights_attested: {type: boolean, description: Người dùng xác nhận có quyền sử dụng tài liệu; bắt buộc true}
+          application/json:
+            schema:
+              type: object
+              required: [text, rights_attested]
+              properties:
+                text: {type: string, minLength: 1, maxLength: 1500000}
+                title: {type: string, maxLength: 200}
+                rights_attested: {type: boolean}
+      responses:
+        '202':
+          description: Đã nhận
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Document'}
+        '400': {$ref: '#/components/responses/Problem'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '413': {$ref: '#/components/responses/Problem'}
+        '415': {$ref: '#/components/responses/Problem'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+  /documents/{documentId}:
+    parameters:
+    - name: documentId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    get:
+      tags: [documents]
+      operationId: getDocument
+      summary: Chi tiết và trạng thái bóc tách của một tài liệu
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Document'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [documents]
+      operationId: deleteDocument
+      summary: Xoá tài liệu gốc ngay (file + đoạn văn). Báo cáo đã tạo có thể xoá riêng.
+      parameters:
+      - name: cascade_reports
+        in: query
+        schema: {type: boolean, default: false}
+        description: 'true: xoá luôn mọi job/báo cáo sinh từ tài liệu'
+      responses:
+        '204': {description: Đã xoá}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /jobs/estimate:
+    post:
+      tags: [jobs]
+      operationId: estimateJob
+      summary: Ước tính tín dụng và thời gian TRƯỚC khi tạo job (không trừ tín dụng)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobCreate'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Estimate'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Problem'}
+  /jobs:
+    get:
+      tags: [jobs]
+      operationId: listJobs
+      summary: Danh sách job của tôi (lọc theo trạng thái)
+      parameters:
+      - {$ref: '#/components/parameters/Cursor'}
+      - {$ref: '#/components/parameters/Limit'}
+      - name: status
+        in: query
+        schema: {$ref: '#/components/schemas/JobStatus'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/JobPage'}
+    post:
+      tags: [jobs]
+      operationId: createJob
+      summary: Tạo job (trừ tín dụng nguyên tử qua charge_credits, đặt hàng đợi). Trả 202.
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema: {type: string, minLength: 8, maxLength: 80}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/JobCreate'}
+      responses:
+        '202':
+          description: Đã xếp hàng
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        '402': {$ref: '#/components/responses/PaymentRequired'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Problem'}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+        '503':
+          description: Hệ thống tạm dừng nhận job do chạm trần chi tiêu ngày (code=spend_cap_reached)
+          content:
+            application/problem+json:
+              schema: {$ref: '#/components/schemas/Problem'}
+  /jobs/{jobId}:
+    parameters:
+    - name: jobId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    get:
+      tags: [jobs]
+      operationId: getJob
+      summary: Trạng thái, tiến độ và chi phí tín dụng của một job
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /jobs/{jobId}/cancel:
+    post:
+      tags: [jobs]
+      operationId: cancelJob
+      summary: Yêu cầu huỷ (hợp tác). Hoàn tín dụng theo chính sách (hoàn toàn bộ nếu chưa qua giai đoạn map).
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      responses:
+        '202':
+          description: Đã ghi nhận yêu cầu huỷ
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /jobs/{jobId}/events:
+    get:
+      tags: [jobs]
+      operationId: streamJobEvents
+      summary: 'Luồng SSE tiến độ. Mỗi sự kiện là JobEvent (schemas/job_event.schema.json). Server gửi dòng chú thích '': ping'' mỗi 15 giây và đóng luồng sau sự kiện kết thúc.'
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: Last-Event-ID
+        in: header
+        required: false
+        schema: {type: integer}
+        description: Phát lại các sự kiện có id lớn hơn giá trị này
+      responses:
+        '200':
+          description: Luồng sự kiện
+          content:
+            text/event-stream:
+              schema: {type: string}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /jobs/{jobId}/glossary:
+    parameters:
+    - name: jobId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    get:
+      tags: [jobs]
+      operationId: getJobGlossary
+      summary: Glossary của job (gộp chuẩn + cá nhân + gợi ý từ P1) để người dùng duyệt ở trạng thái awaiting_glossary
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries, review_deadline]
+                properties:
+                  review_deadline:
+                    type: [string, 'null']
+                    format: date-time
+                  entries:
+                    type: array
+                    items: {$ref: '#/components/schemas/JobGlossaryEntry'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /jobs/{jobId}/glossary/confirm:
+    post:
+      tags: [jobs]
+      operationId: confirmJobGlossary
+      summary: Xác nhận glossary và cho job chạy tiếp (awaiting_glossary -> running)
+      parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [entries, save_to_glossary_id]
+              properties:
+                entries:
+                  type: array
+                  maxItems: 400
+                  items: {$ref: '#/components/schemas/JobGlossaryEntry'}
+                save_to_glossary_id:
+                  type: [string, 'null']
+                  format: uuid
+                  description: 'Lưu các mục mới/đã sửa vào glossary cá nhân này (null: không lưu)'
+      responses:
+        '202':
+          description: Job tiếp tục
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Job'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /glossaries:
+    get:
+      tags: [glossaries]
+      operationId: listGlossaries
+      summary: Glossary cá nhân của tôi và các glossary chuẩn (shared, chỉ đọc)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Glossary'}
+    post:
+      tags: [glossaries]
+      operationId: createGlossary
+      summary: Tạo glossary cá nhân
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GlossaryCreate'}
+      responses:
+        '201':
+          description: Đã tạo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Glossary'}
+        '422': {$ref: '#/components/responses/Problem'}
+  /glossaries/{glossaryId}:
+    parameters:
+    - name: glossaryId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    get:
+      tags: [glossaries]
+      operationId: getGlossary
+      summary: Chi tiết một glossary
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Glossary'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [glossaries]
+      operationId: updateGlossary
+      summary: Sửa tên, mô tả, lĩnh vực của glossary cá nhân
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                description: {type: string}
+                domain: {type: string}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Glossary'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [glossaries]
+      operationId: deleteGlossary
+      summary: Xoá glossary cá nhân
+      responses:
+        '204': {description: Đã xoá}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /glossaries/{glossaryId}/entries:
+    parameters:
+    - name: glossaryId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    get:
+      tags: [glossaries]
+      operationId: listGlossaryEntries
+      summary: Danh sách thuật ngữ trong glossary (có tìm kiếm)
+      parameters:
+      - name: q
+        in: query
+        schema: {type: string}
+        description: Tìm theo thuật ngữ nguồn/đích (không phân biệt hoa-thường và dấu)
+      - {$ref: '#/components/parameters/Cursor'}
+      - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/GlossaryEntry'}
+    post:
+      tags: [glossaries]
+      operationId: createGlossaryEntry
+      summary: Thêm thuật ngữ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GlossaryEntryInput'}
+      responses:
+        '201':
+          description: Đã tạo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GlossaryEntry'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /glossaries/{glossaryId}/entries/{entryId}:
+    parameters:
+    - name: glossaryId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    - name: entryId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    patch:
+      tags: [glossaries]
+      operationId: updateGlossaryEntry
+      summary: Sửa thuật ngữ
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GlossaryEntryInput'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GlossaryEntry'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [glossaries]
+      operationId: deleteGlossaryEntry
+      summary: Xoá thuật ngữ
+      responses:
+        '204': {description: Đã xoá}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /glossaries/{glossaryId}/import:
+    post:
+      tags: [glossaries]
+      operationId: importGlossaryCsv
+      summary: 'Nhập CSV UTF-8 (cột: source_term,target_term,keep_original,case_sensitive,forbidden_variants,term_type,note; forbidden_variants phân tách bằng |)'
+      parameters:
+      - name: glossaryId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          text/csv:
+            schema: {type: string}
+      responses:
+        '200':
+          description: Kết quả nhập
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [created, updated, rejected]
+                properties:
+                  created: {type: integer}
+                  updated: {type: integer}
+                  rejected:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        line: {type: integer}
+                        reason: {type: string}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /glossaries/{glossaryId}/export:
+    get:
+      tags: [glossaries]
+      operationId: exportGlossaryCsv
+      summary: Xuất glossary ra CSV
+      parameters:
+      - name: glossaryId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: CSV UTF-8 (có BOM để Excel mở đúng tiếng Việt)
+          content:
+            text/csv:
+              schema: {type: string}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /recipes:
+    get:
+      tags: [recipes]
+      operationId: listRecipes
+      summary: Công thức chính thức (is_official) + công thức của tôi
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/Recipe'}
+  /recipes/{recipeId}:
+    get:
+      tags: [recipes]
+      operationId: getRecipe
+      summary: Chi tiết một công thức
+      parameters:
+      - name: recipeId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Recipe'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /reports:
+    get:
+      tags: [reports]
+      operationId: listReports
+      summary: Danh sách báo cáo của tôi
+      parameters:
+      - {$ref: '#/components/parameters/Cursor'}
+      - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ReportPage'}
+  /reports/{reportId}:
+    parameters:
+    - name: reportId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    get:
+      tags: [reports]
+      operationId: getReport
+      summary: Báo cáo có cấu trúc (mục, khối, trích dẫn) để hiển thị
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Report'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [reports]
+      operationId: deleteReport
+      summary: Xoá báo cáo
+      responses:
+        '204': {description: Đã xoá}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /reports/{reportId}/export:
+    get:
+      tags: [reports]
+      operationId: exportReport
+      summary: Xuất file. Tạo theo yêu cầu, cache ở bảng exports; luôn kèm cảnh báo nội dung do AI tạo.
+      parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: format
+        in: query
+        required: true
+        schema:
+          type: string
+          enum: [md, docx, pdf, html]
+      - name: bilingual
+        in: query
+        schema: {type: boolean, default: false}
+        description: Chỉ với level=full_translation và tài liệu gốc còn tồn tại
+      responses:
+        '200':
+          description: File
+          content:
+            application/octet-stream:
+              schema: {type: string, format: binary}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '410': {$ref: '#/components/responses/Problem'}
+  /reports/{reportId}/feedback:
+    post:
+      tags: [reports]
+      operationId: createFeedback
+      summary: Chấm sao và góp ý cho báo cáo
+      parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating]
+              properties:
+                rating: {type: integer, minimum: 1, maximum: 5}
+                tags:
+                  type: array
+                  maxItems: 8
+                  items:
+                    type: string
+                    enum: [thieu_y, sai_y, sai_thuat_ngu, van_phong_kho_doc, qua_dai, qua_ngan, khac]
+                comment: {type: string, maxLength: 2000}
+      responses:
+        '204': {description: Đã ghi nhận}
+  /reports/{reportId}/blocks/{blockId}/flag:
+    post:
+      tags: [reports]
+      operationId: flagBlock
+      summary: Báo lỗi một đoạn (sai/thiếu/khó đọc); dữ liệu đưa vào golden set sau khi được duyệt
+      parameters:
+      - name: reportId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - name: blockId
+        in: path
+        required: true
+        schema: {type: string, pattern: '^S[0-9]{2,}\.b[0-9]{2,}$'}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  enum: [sai_noi_dung, thieu_noi_dung, sai_thuat_ngu, van_phong, khac]
+                comment: {type: string, maxLength: 1000}
+      responses:
+        '204': {description: Đã ghi nhận}
+  /takedown:
+    post:
+      tags: [public]
+      operationId: createTakedown
+      summary: Biểu mẫu công khai báo cáo vi phạm bản quyền/nội dung (không cần đăng nhập; có Turnstile)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reporter_email, description, turnstile_token]
+              properties:
+                reporter_name: {type: string}
+                reporter_email: {type: string, format: email}
+                report_id:
+                  type: [string, 'null']
+                  format: uuid
+                description: {type: string, minLength: 20, maxLength: 5000}
+                turnstile_token: {type: string}
+      responses:
+        '202': {description: Đã tiếp nhận}
+        '429': {$ref: '#/components/responses/TooManyRequests'}
+  /admin/invites:
+    get:
+      tags: [admin]
+      operationId: adminListInvites
+      summary: Danh sách mã mời
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/InviteCode'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [admin]
+      operationId: adminCreateInvites
+      summary: Tạo một hoặc nhiều mã mời
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [count, credits_grant, max_uses]
+              properties:
+                count: {type: integer, minimum: 1, maximum: 200}
+                credits_grant: {type: integer, minimum: 1}
+                max_uses: {type: integer, minimum: 1}
+                expires_at:
+                  type: [string, 'null']
+                  format: date-time
+                note: {type: string}
+      responses:
+        '201':
+          description: Đã tạo
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/InviteCode'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/invites/{code}:
+    delete:
+      tags: [admin]
+      operationId: adminRevokeInvite
+      summary: Thu hồi mã mời
+      parameters:
+      - name: code
+        in: path
+        required: true
+        schema: {type: string}
+      responses:
+        '204': {description: Đã thu hồi}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/users:
+    get:
+      tags: [admin]
+      operationId: adminListUsers
+      summary: Danh sách người dùng (tìm kiếm)
+      parameters:
+      - name: q
+        in: query
+        schema: {type: string}
+      - {$ref: '#/components/parameters/Cursor'}
+      - {$ref: '#/components/parameters/Limit'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/AdminUser'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/users/{userId}:
+    patch:
+      tags: [admin]
+      operationId: adminUpdateUser
+      summary: Khoá/mở khoá người dùng, điều chỉnh tín dụng (ghi audit_log)
+      parameters:
+      - name: userId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [active, suspended]
+                credit_adjustment: {type: integer}
+                reason: {type: string}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AdminUser'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/usage:
+    get:
+      tags: [admin]
+      operationId: adminUsage
+      summary: Chi phí, số job, tỷ lệ thành công, phân bố hạng chất lượng theo ngày
+      parameters:
+      - name: from
+        in: query
+        schema: {type: string, format: date}
+      - name: to
+        in: query
+        schema: {type: string, format: date}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/UsageDay'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/spend-cap:
+    put:
+      tags: [admin]
+      operationId: adminSetSpendCap
+      summary: Đặt trần chi tiêu ngày (USD). Chạm trần thì spend_daily.paused = true và POST /jobs trả 503.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [daily_spend_cap_usd]
+              properties:
+                daily_spend_cap_usd: {type: number, minimum: 0}
+      responses:
+        '204': {description: Đã cập nhật}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/recipes:
+    post:
+      tags: [admin]
+      operationId: adminCreateRecipe
+      summary: Tạo/cập nhật công thức chính thức (tham số, không phải prompt hệ thống)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slug, name, config]
+              properties:
+                slug: {type: string, pattern: '^[a-z0-9-]{3,60}$'}
+                name: {type: string}
+                description: {type: string}
+                config: {type: object, description: RecipeConfig - schemas/recipe_config.schema.json}
+      responses:
+        '201':
+          description: Đã tạo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/Recipe'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/takedowns:
+    get:
+      tags: [admin]
+      operationId: adminListTakedowns
+      summary: Danh sách khiếu nại bản quyền/nội dung
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: {type: string, format: uuid}
+                    reporter_email: {type: string}
+                    report_id:
+                      type: [string, 'null']
+                    description: {type: string}
+                    status:
+                      type: string
+                      enum: [open, investigating, actioned, rejected]
+                    created_at: {type: string, format: date-time}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/pool/config:
+    get:
+      tags: [pool]
+      operationId: adminExportPoolConfig
+      summary: Xuất PoolConfig (schemas/pool_config.schema.json). Khoá chỉ ở dạng tham chiếu secret_ref, không bao giờ trả khoá thật
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {type: object, description: PoolConfig}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    put:
+      tags: [pool]
+      operationId: adminImportPoolConfig
+      summary: Nhập PoolConfig. dry_run=true (mặc định) chỉ kiểm tra schema, ràng buộc chéo và trả bản so sánh thay đổi; dry_run=false áp dụng và tăng app_settings.pool_version
+      parameters:
+      - name: dry_run
+        in: query
+        schema: {type: boolean, default: true}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, description: PoolConfig}
+      responses:
+        '200':
+          description: Kết quả kiểm tra/áp dụng
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PoolImportResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Problem'}
+  /admin/pool/status:
+    get:
+      tags: [pool]
+      operationId: adminPoolStatus
+      summary: 'Trạng thái sống của từng deployment: headroom, circuit, cooldown, đã dùng trong ngày, số khoá đang hoạt động'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/PoolDeploymentStatus'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/pool/capacity:
+    get:
+      tags: [pool]
+      operationId: adminPoolCapacity
+      summary: 'Dự báo dung lượng: số tài liệu mỗi ngày theo mức và theo chế độ riêng tư, tính từ hạn mức đã cấu hình (reference/estimator.py: estimate_calls, docs_per_day)'
+      parameters:
+      - name: privacy_class
+        in: query
+        schema: {$ref: '#/components/schemas/PrivacyClass'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PoolCapacity'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/pool/groups/{groupId}:
+    parameters:
+    - name: groupId
+      in: path
+      required: true
+      schema: {type: string}
+    patch:
+      tags: [pool]
+      operationId: adminPatchPoolGroup
+      summary: 'Sửa nhóm hạn mức: bật/tắt, hạn mức cả tài khoản, hệ số an toàn, cờ ToS, cổng triển khai được phép, data_policy (ghi audit_log)'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PoolGroupPatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PoolGroup'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/pool/groups/{groupId}/credentials:
+    parameters:
+    - name: groupId
+      in: path
+      required: true
+      schema: {type: string}
+    post:
+      tags: [pool]
+      operationId: adminAddPoolCredential
+      summary: Thêm một khoá vào nhóm. secret chỉ ghi, mã hoá ở tầng ứng dụng (secret_enc); phản hồi chỉ có 4 ký tự cuối
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PoolCredentialCreate'}
+      responses:
+        '201':
+          description: Đã thêm
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PoolCredential'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Problem'}
+  /admin/pool/credentials/{credentialId}:
+    parameters:
+    - name: credentialId
+      in: path
+      required: true
+      schema: {type: string}
+    patch:
+      tags: [pool]
+      operationId: adminPatchPoolCredential
+      summary: Bật/tắt khoá hoặc gỡ trạng thái quarantined sau khi đã xử lý nguyên nhân bị từ chối
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [active, disabled]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PoolCredential'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    delete:
+      tags: [pool]
+      operationId: adminDeletePoolCredential
+      summary: Xoá khoá (xoá bản mã hoá khỏi CSDL)
+      responses:
+        '204': {description: Đã xoá}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/pool/deployments/{deploymentId}:
+    parameters:
+    - name: deploymentId
+      in: path
+      required: true
+      schema: {type: string}
+    patch:
+      tags: [pool]
+      operationId: adminPatchPoolDeployment
+      summary: Sửa hạn mức, trọng số, thẻ, bật/tắt một deployment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/PoolDeploymentPatch'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PoolDeploymentStatus'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/pool/deployments/{deploymentId}/probe:
+    parameters:
+    - name: deploymentId
+      in: path
+      required: true
+      schema: {type: string}
+    post:
+      tags: [pool]
+      operationId: adminProbeDeployment
+      summary: 'Chạy bài kiểm định nhận vào pool: tuân thủ JSON theo schema, tiếng Việt, ngữ cảnh dài, dịch máy; ghi llm_probe_runs và cập nhật quality của model'
+      responses:
+        '202':
+          description: Đã nhận
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ProbeRun'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/pool/incidents:
+    get:
+      tags: [pool]
+      operationId: adminPoolIncidents
+      summary: 'Sự cố của pool: 429, mở circuit, khoá bị từ chối'
+      parameters:
+      - {$ref: '#/components/parameters/Cursor'}
+      - {$ref: '#/components/parameters/Limit'}
+      - name: deployment_id
+        in: query
+        schema: {type: string}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/PoolIncident'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /style-cores:
+    get:
+      tags: [style-cores]
+      operationId: listStyleCores
+      summary: Các Lõi văn phong có phiên bản đã duyệt mà người dùng được chọn
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/StyleCoreSummary'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+  /admin/style-cores:
+    get:
+      tags: [style-cores]
+      operationId: adminListStyleCores
+      summary: Mọi Lõi văn phong kèm trạng thái các phiên bản (admin, curator)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/StyleCoreSummary'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+    post:
+      tags: [style-cores]
+      operationId: adminCreateStyleCore
+      summary: Tạo Lõi văn phong và phiên bản nháp 0.1.0 (nội dung mặc định = lõi trung tính)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StyleCoreCreate'}
+      responses:
+        '201':
+          description: Đã tạo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StyleCoreVersion'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Problem'}
+  /admin/style-cores/{styleCoreId}/versions:
+    parameters:
+    - name: styleCoreId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    get:
+      tags: [style-cores]
+      operationId: adminListStyleCoreVersions
+      summary: Các phiên bản của một lõi
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/StyleCoreVersion'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [style-cores]
+      operationId: adminCreateStyleCoreVersion
+      summary: Tạo phiên bản nháp mới từ một phiên bản có sẵn (copy-on-write; phiên bản đã duyệt không sửa được)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StyleCoreVersionCreate'}
+      responses:
+        '201':
+          description: Đã tạo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StyleCoreVersion'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/style-cores/{styleCoreId}/versions/{versionId}:
+    parameters:
+    - name: styleCoreId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    - name: versionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    get:
+      tags: [style-cores]
+      operationId: adminGetStyleCoreVersion
+      summary: Chi tiết phiên bản kèm kết quả lint và quyết định còn mở
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StyleCoreVersion'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    patch:
+      tags: [style-cores]
+      operationId: adminEditStyleCoreVersion
+      summary: Sửa nội dung bản nháp (người duyệt sửa trực tiếp quy tắc, ví dụ, chính sách); ghi style_core_reviews. 409 version_immutable nếu đã duyệt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StyleCoreEdit'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StyleCoreVersion'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Problem'}
+  /admin/style-cores/{styleCoreId}/versions/{versionId}/submit:
+    parameters:
+    - name: styleCoreId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    - name: versionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    post:
+      tags: [style-cores]
+      operationId: adminSubmitStyleCoreVersion
+      summary: Gửi duyệt (draft -> in_review)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StyleCoreVersion'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/style-cores/{styleCoreId}/versions/{versionId}/answer-decision:
+    parameters:
+    - name: styleCoreId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    - name: versionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    post:
+      tags: [style-cores]
+      operationId: adminAnswerStyleDecision
+      summary: Trả lời một quyết định mở do AI nêu (decisions_needed); câu trả lời được áp vào nội dung và đóng quyết định
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/DecisionAnswer'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StyleCoreVersion'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/style-cores/{styleCoreId}/versions/{versionId}/approve:
+    parameters:
+    - name: styleCoreId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    - name: versionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    post:
+      tags: [style-cores]
+      operationId: adminApproveStyleCoreVersion
+      summary: 'Duyệt: bất biến từ đây. 409 approval_blocked kèm danh sách vấn đề nếu còn quyết định mở, mục AI chưa xác nhận hoặc lint có lỗi (reference/style_core.py: approval_problems)'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StyleCoreVersion'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/style-cores/{styleCoreId}/versions/{versionId}/reject:
+    parameters:
+    - name: styleCoreId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    - name: versionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    post:
+      tags: [style-cores]
+      operationId: adminRejectStyleCoreVersion
+      summary: Từ chối kèm lý do
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [comment]
+              properties:
+                comment: {type: string, minLength: 1, maxLength: 1000}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/StyleCoreVersion'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/style-cores/{styleCoreId}/versions/{versionId}/test-drive:
+    parameters:
+    - name: styleCoreId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    - name: versionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    post:
+      tags: [style-cores]
+      operationId: adminTestDriveStyleCore
+      summary: Chạy thử lõi trên vài đoạn mẫu và so sánh với phiên bản khác; kết quả trong curation_run, không tính vào tín dụng người dùng
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/TestDriveRequest'}
+      responses:
+        '202':
+          description: Đã nhận
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurationRun'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Problem'}
+  /admin/style-cores/{styleCoreId}/propose:
+    parameters:
+    - name: styleCoreId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    post:
+      tags: [style-cores]
+      operationId: adminProposeStyleCore
+      summary: Để AI đề xuất nội dung (P12) từ bản tóm tắt lĩnh vực, tài liệu mẫu, cặp dịch tham chiếu và phản hồi; kết quả là phiên bản NHÁP origin = ai_proposal chờ người duyệt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/StyleProposeRequest'}
+      responses:
+        '202':
+          description: Đã nhận
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurationRun'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Problem'}
+  /admin/curation-runs/{runId}:
+    parameters:
+    - name: runId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    get:
+      tags: [curation]
+      operationId: adminGetCurationRun
+      summary: Trạng thái và kết quả một lần chạy curation (đề xuất lõi, thử lõi, khởi tạo glossary)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurationRun'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/glossary-review:
+    get:
+      tags: [curation]
+      operationId: adminGlossaryReviewQueue
+      summary: Hàng đợi duyệt thuật ngữ đề xuất (AI, người dùng) của glossary chuẩn; mục needs_human xếp trước
+      parameters:
+      - {$ref: '#/components/parameters/Cursor'}
+      - {$ref: '#/components/parameters/Limit'}
+      - name: glossary_id
+        in: query
+        schema: {type: string, format: uuid}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  next_cursor:
+                    type: [string, 'null']
+                  items:
+                    type: array
+                    items: {$ref: '#/components/schemas/GlossaryReviewItem'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+  /admin/glossary-review/{entryId}/decision:
+    parameters:
+    - name: entryId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    post:
+      tags: [curation]
+      operationId: adminDecideGlossaryEntry
+      summary: Duyệt, sửa-rồi-duyệt hoặc loại một thuật ngữ đề xuất (ghi reviewed_by, reviewed_at). Mục bị loại được giữ để AI không đề xuất lại
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GlossaryDecision'}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GlossaryEntry'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /admin/glossaries/{glossaryId}/releases:
+    parameters:
+    - name: glossaryId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    get:
+      tags: [curation]
+      operationId: adminListGlossaryReleases
+      summary: Các bản phát hành của glossary chuẩn
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/GlossaryRelease'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+    post:
+      tags: [curation]
+      operationId: adminPublishGlossaryRelease
+      summary: 'Phát hành: chụp các mục confirmed thành bản bất biến (hàm SQL publish_glossary_release); công thức và job ghim theo số hiệu'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: {type: string, maxLength: 500}
+      responses:
+        '201':
+          description: Đã phát hành
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/GlossaryRelease'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /admin/glossaries/bootstrap:
+    post:
+      tags: [curation]
+      operationId: adminBootstrapGlossary
+      summary: 'Khởi tạo glossary chuẩn từ tài liệu mẫu: P1 trên từng tài liệu, gộp tất định, P13 hài hoà; kết quả là các mục status = suggested chờ người duyệt'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/GlossaryBootstrapRequest'}
+      responses:
+        '202':
+          description: Đã nhận
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CurationRun'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '422': {$ref: '#/components/responses/Problem'}
+  /admin/pool/declare:
+    post:
+      tags: [pool]
+      operationId: adminDeclarePool
+      summary: 'Khai báo nhà cung cấp và khoá hàng loạt (phương pháp nhập thông tin, SPEC §17.14). Body: PoolDeclaration (JSON, hoặc YAML với Content-Type application/yaml); khoá cách nhau bằng dấu phẩy, chấm phẩy, xuống dòng, có thể kèm nhãn nhãn|khoá. dry_run=true (mặc định) chỉ biên dịch và trả bản xem trước, KHÔNG ghi gì; dry_run=false ghi trong một giao dịch, mã hoá khoá ngay và chỉ trả 4 ký tự cuối. Endpoint này không được ghi log nội dung yêu cầu'
+      parameters:
+      - name: dry_run
+        in: query
+        schema: {type: boolean, default: true}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, description: PoolDeclaration - schemas/pool_declaration.schema.json}
+          application/yaml:
+            schema: {type: string, description: 'Cùng nội dung ở dạng YAML (mẫu: examples/pool_declaration.template.yaml)'}
+      responses:
+        '200':
+          description: Kết quả biên dịch hoặc áp dụng
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/DeclareResult'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/Problem'}
+  /admin/pool/declaration-template:
+    get:
+      tags: [pool]
+      operationId: adminPoolDeclarationTemplate
+      summary: Mẫu khai báo YAML có chú thích bằng tiếng Việt để điền (cùng nội dung examples/pool_declaration.template.yaml)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/yaml:
+              schema: {type: string}
+        '403': {$ref: '#/components/responses/Forbidden'}
+components:
+  securitySchemes:
+    cookieAuth: {type: apiKey, in: cookie, name: visynth_session}
+    bearerAuth: {type: http, scheme: bearer}
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema: {type: string}
+      description: Con trỏ phân trang không trong suốt
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema: {type: integer, minimum: 1, maximum: 100, default: 20}
+  responses:
+    Problem:
+      description: Lỗi
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Unauthorized:
+      description: Chưa đăng nhập
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Forbidden:
+      description: Không đủ quyền
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    NotFound:
+      description: Không tìm thấy (cũng trả về khi tài nguyên thuộc người dùng khác - chống dò ID)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    Conflict:
+      description: Xung đột trạng thái
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    PaymentRequired:
+      description: Không đủ tín dụng (code=insufficient_credits)
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+    TooManyRequests:
+      description: Vượt giới hạn tốc độ
+      headers:
+        Retry-After:
+          schema: {type: integer}
+          description: Số giây nên chờ
+      content:
+        application/problem+json:
+          schema: {$ref: '#/components/schemas/Problem'}
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: {type: string}
+        title: {type: string}
+        status: {type: integer}
+        detail: {type: string}
+        code:
+          type: string
+          enum: [unauthenticated, forbidden, not_found, validation_error, unsupported_file_type, file_too_large, document_too_large, extraction_failed, encrypted_pdf, insufficient_credits, rate_limited, spend_cap_reached, invite_invalid, invite_exhausted, invite_already_redeemed, job_not_cancelable, glossary_not_ready, rights_not_attested, consent_required, active_job_limit, document_expired, internal_error, level_disabled, full_translation_daily_limit, shared_processing_consent_required, age_confirmation_required, privacy_mode_unavailable, pool_capacity_exceeded, approval_blocked, version_immutable, style_core_not_approved, draft_not_editable, risk_ack_required, declaration_invalid]
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              field: {type: string}
+              message: {type: string}
+    Level:
+      type: string
+      enum: [full_translation, detailed_synthesis, deep_synthesis, executive_brief]
+    Stage:
+      type: string
+      enum: [extract, profile, segment, glossary, map, consolidate, write, verify, repair, translate, assemble]
+    Importance:
+      type: string
+      enum: [core, supporting, minor]
+    Verdict:
+      type: string
+      enum: [supported, partially_supported, unsupported, contradicted]
+    JobStatus:
+      type: string
+      enum: [queued, running, awaiting_glossary, succeeded, failed, canceled, expired]
+    Me:
+      type: object
+      required: [id, email, role, locale, credits, limits]
+      properties:
+        id: {type: string, format: uuid}
+        email: {type: string, format: email}
+        display_name:
+          type: [string, 'null']
+        role:
+          type: string
+          enum: [user, curator, admin]
+        locale: {type: string}
+        credits: {type: integer}
+        consent_cross_border: {type: boolean}
+        consent_shared_processing: {type: boolean, description: Đã đồng ý chế độ standard (nội dung có thể đi qua nhà cung cấp dùng dữ liệu để cải thiện sản phẩm)}
+        age_confirmed: {type: boolean}
+        enabled_levels:
+          type: array
+          items: {$ref: '#/components/schemas/Level'}
+          description: Các mức đang bật (app_settings.enabled_levels)
+        available_privacy_classes:
+          type: array
+          items: {$ref: '#/components/schemas/PrivacyClass'}
+          description: private chỉ có khi pool có ít nhất một deployment no_training đủ điều kiện ở cổng hiện tại
+        limits:
+          type: object
+          properties:
+            max_words_per_document: {type: integer}
+            max_words_full_translation: {type: integer}
+            max_active_jobs: {type: integer}
+    CreditsPage:
+      type: object
+      required: [balance, items]
+      properties:
+        balance: {type: integer}
+        next_cursor:
+          type: [string, 'null']
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, delta, reason, created_at]
+            properties:
+              id: {type: integer}
+              delta: {type: integer}
+              reason: {type: string}
+              job_id:
+                type: [string, 'null']
+                format: uuid
+              created_at: {type: string, format: date-time}
+    Document:
+      type: object
+      required: [id, title, source_type, status, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        title: {type: string}
+        source_type:
+          type: string
+          enum: [upload, paste, url]
+        original_filename:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [uploaded, extracting, ready, failed, deleted]
+        language_code:
+          type: [string, 'null']
+        word_count:
+          type: [integer, 'null']
+        page_count:
+          type: [integer, 'null']
+        extraction_quality:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 1
+        extraction_warnings:
+          type: array
+          items:
+            type: string
+            enum: [scanned_pdf_ocr_used, low_text_quality, multi_column_detected, encrypted_removed, tables_flattened, images_ignored, language_mixed, truncated]
+        profile:
+          type: [object, 'null']
+          description: DocProfile - schemas/doc_profile.schema.json
+        error_code:
+          type: [string, 'null']
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        created_at: {type: string, format: date-time}
+    DocumentPage:
+      type: object
+      required: [items]
+      properties:
+        next_cursor:
+          type: [string, 'null']
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Document'}
+    JobCreate:
+      type: object
+      required: [document_id, level]
+      properties:
+        document_id: {type: string, format: uuid}
+        recipe_id:
+          type: [string, 'null']
+          format: uuid
+        level: {$ref: '#/components/schemas/Level'}
+        glossary_ids:
+          type: array
+          maxItems: 5
+          items: {type: string, format: uuid}
+        custom_instructions: {type: string, maxLength: 1000}
+        notify_by_email: {type: boolean, default: false}
+        skip_glossary_review: {type: boolean, default: false}
+        privacy_class: {$ref: '#/components/schemas/PrivacyClass'}
+        style_core_id:
+          type: [string, 'null']
+          format: uuid
+          description: Ghi đè Lõi văn phong của công thức; chỉ chấp nhận lõi có phiên bản đã duyệt (409 style_core_not_approved)
+    Estimate:
+      type: object
+      required: [words, pages_equiv, level, credits, balance_after, est_minutes_low, est_minutes_high, will_review_glossary, warnings]
+      properties:
+        words: {type: integer}
+        pages_equiv: {type: number}
+        level: {$ref: '#/components/schemas/Level'}
+        credits: {type: integer}
+        balance_after: {type: integer}
+        est_minutes_low: {type: number}
+        est_minutes_high: {type: number}
+        will_review_glossary: {type: boolean}
+        est_cost_usd:
+          type: [number, 'null']
+          description: Chỉ trả cho admin
+        privacy_class: {$ref: '#/components/schemas/PrivacyClass'}
+        shared_processing_required: {type: boolean, description: 'true: job sẽ có thể đi qua nhóm miễn phí; UI phải hiện thông báo và cần consent_shared_processing'}
+        queue:
+          type: object
+          required: [state]
+          properties:
+            state:
+              type: string
+              enum: [ready, delayed, blocked]
+            wait_minutes_low:
+              type: [number, 'null']
+            wait_minutes_high:
+              type: [number, 'null']
+            reason:
+              type: [string, 'null']
+              enum: [pool_busy, free_quota_exhausted, no_eligible_deployment, spend_cap, null]
+        warnings:
+          type: array
+          items:
+            type: string
+            enum: [low_text_quality, scanned_pdf_ocr, very_long_document, full_translation_copyright_notice, price_change_soon, pool_delay, shared_processing_notice]
+    Job:
+      type: object
+      required: [id, document_id, level, status, progress, est_credits, charged_credits, refunded_credits, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        document_id: {type: string, format: uuid}
+        recipe_id:
+          type: [string, 'null']
+          format: uuid
+        level: {$ref: '#/components/schemas/Level'}
+        status: {$ref: '#/components/schemas/JobStatus'}
+        current_stage:
+          oneOf:
+          - {$ref: '#/components/schemas/Stage'}
+          - {type: 'null'}
+        progress: {type: number, minimum: 0, maximum: 100}
+        est_credits: {type: integer}
+        charged_credits: {type: integer}
+        refunded_credits: {type: integer}
+        quality_grade:
+          type: [string, 'null']
+          enum: [A, B, C, null]
+        report_id:
+          type: [string, 'null']
+          format: uuid
+        error_code:
+          type: [string, 'null']
+        error_message:
+          type: [string, 'null']
+        glossary_review_deadline:
+          type: [string, 'null']
+          format: date-time
+        privacy_class: {$ref: '#/components/schemas/PrivacyClass'}
+        pool_wait_until:
+          type: [string, 'null']
+          format: date-time
+          description: Có giá trị khi job đang chờ hạn mức của nhà cung cấp (chờ tới giờ này rồi tự chạy tiếp)
+        style_core_version:
+          type: [string, 'null']
+          description: Phiên bản Lõi văn phong đã ghim cho job
+        created_at: {type: string, format: date-time}
+        started_at:
+          type: [string, 'null']
+          format: date-time
+        finished_at:
+          type: [string, 'null']
+          format: date-time
+    JobPage:
+      type: object
+      required: [items]
+      properties:
+        next_cursor:
+          type: [string, 'null']
+        items:
+          type: array
+          items: {$ref: '#/components/schemas/Job'}
+    GlossaryEntryInput:
+      type: object
+      required: [source_term, target_term]
+      properties:
+        source_term: {type: string, minLength: 1, maxLength: 120}
+        target_term: {type: string, minLength: 1, maxLength: 160}
+        keep_original: {type: boolean, default: false}
+        case_sensitive: {type: boolean, default: false}
+        forbidden_variants:
+          type: array
+          maxItems: 10
+          items: {type: string, maxLength: 160}
+        term_type:
+          type: string
+          enum: [concept, proper_name, acronym, title, unit, other]
+          default: concept
+        note: {type: string, maxLength: 300}
+    GlossaryEntry:
+      allOf:
+      - {$ref: '#/components/schemas/GlossaryEntryInput'}
+      - type: object
+        required: [id, status]
+        properties:
+          id: {type: string, format: uuid}
+          status:
+            type: string
+            enum: [suggested, confirmed, rejected]
+          proposed_by:
+            type: string
+            enum: [ai, user, curator, import]
+          needs_human: {type: boolean}
+          question_vi:
+            type: [string, 'null']
+          confidence:
+            type: [number, 'null']
+            minimum: 0
+            maximum: 1
+    JobGlossaryEntry:
+      allOf:
+      - {$ref: '#/components/schemas/GlossaryEntryInput'}
+      - type: object
+        required: [origin, status]
+        properties:
+          origin:
+            type: string
+            enum: [shared, personal, suggested, user_edit]
+          status:
+            type: string
+            enum: [suggested, confirmed, rejected]
+          confidence:
+            type: [number, 'null']
+            minimum: 0
+            maximum: 1
+          occurrences:
+            type: [integer, 'null']
+    GlossaryCreate:
+      type: object
+      required: [name]
+      properties:
+        name: {type: string, maxLength: 120}
+        description: {type: string}
+        domain: {type: string}
+        source_lang: {type: string, default: en}
+        target_lang: {type: string, default: vi}
+    Glossary:
+      type: object
+      required: [id, scope, name, version, entry_count]
+      properties:
+        id: {type: string, format: uuid}
+        scope:
+          type: string
+          enum: [personal, shared]
+        name: {type: string}
+        description:
+          type: [string, 'null']
+        domain:
+          type: [string, 'null']
+        version: {type: integer}
+        entry_count: {type: integer}
+        read_only: {type: boolean}
+    Recipe:
+      type: object
+      required: [id, slug, name, is_official, version, config]
+      properties:
+        id: {type: string, format: uuid}
+        slug: {type: string}
+        name: {type: string}
+        description:
+          type: [string, 'null']
+        is_official: {type: boolean}
+        visibility:
+          type: string
+          enum: [private, unlisted, public]
+        version: {type: integer}
+        config: {type: object, description: RecipeConfig - schemas/recipe_config.schema.json}
+    Citation:
+      type: object
+      required: [unit_id, title_vi, statement_vi, evidence]
+      properties:
+        unit_id: {type: string, pattern: '^U-[0-9]{4,}$'}
+        title_vi: {type: string}
+        statement_vi: {type: string}
+        evidence:
+          type: array
+          items:
+            type: object
+            required: [pid, quote]
+            properties:
+              pid: {type: string}
+              quote: {type: string}
+              page:
+                type: [integer, 'null']
+              timecode:
+                type: [string, 'null']
+                description: hh:mm:ss
+              source_available: {type: boolean, description: false nếu tài liệu gốc đã hết hạn (vẫn có trích đoạn ngắn)}
+    ReportBlock:
+      type: object
+      required: [block_id, type, markdown_vi, cites, status]
+      properties:
+        block_id: {type: string, pattern: '^S[0-9]{2,}\.b[0-9]{2,}$'}
+        type:
+          type: string
+          enum: [paragraph, bullet_list, numbered_list, table, callout, subheading]
+        markdown_vi: {type: string}
+        cites:
+          type: array
+          items: {type: string}
+        verdict:
+          oneOf:
+          - {$ref: '#/components/schemas/Verdict'}
+          - {type: 'null'}
+        status:
+          type: string
+          enum: [ok, repaired, flagged, removed]
+    Report:
+      type: object
+      required: [id, job_id, title, level, sections, citations, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        job_id: {type: string, format: uuid}
+        title: {type: string}
+        level: {$ref: '#/components/schemas/Level'}
+        quality_grade:
+          type: [string, 'null']
+          enum: [A, B, C, null]
+        stats:
+          type: object
+          properties:
+            coverage_core: {type: number}
+            faithfulness_rate: {type: number}
+            flagged_blocks: {type: integer}
+            source_words: {type: integer}
+            report_words: {type: integer}
+        scope_note_md:
+          type: [string, 'null']
+        ai_notice: {type: string, description: Thông báo nội dung do AI tạo (Luật Trí tuệ nhân tạo 134/2025/QH15); luôn hiển thị}
+        sections:
+          type: array
+          items:
+            type: object
+            required: [section_id, kind, title_vi, blocks]
+            properties:
+              section_id: {type: string}
+              kind:
+                type: string
+                enum: [summary, body, facts_table, glossary_appendix, scope_note]
+              title_vi: {type: string}
+              blocks:
+                type: array
+                items: {$ref: '#/components/schemas/ReportBlock'}
+        citations:
+          type: object
+          description: Từ điển unit_id -> Citation (chỉ gồm các unit được trích dẫn)
+          additionalProperties: {$ref: '#/components/schemas/Citation'}
+        created_at: {type: string, format: date-time}
+    ReportPage:
+      type: object
+      required: [items]
+      properties:
+        next_cursor:
+          type: [string, 'null']
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, title, level, created_at]
+            properties:
+              id: {type: string, format: uuid}
+              title: {type: string}
+              level: {$ref: '#/components/schemas/Level'}
+              quality_grade:
+                type: [string, 'null']
+              created_at: {type: string, format: date-time}
+    InviteCode:
+      type: object
+      required: [code, credits_grant, max_uses, used_count]
+      properties:
+        code: {type: string}
+        credits_grant: {type: integer}
+        max_uses: {type: integer}
+        used_count: {type: integer}
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        revoked_at:
+          type: [string, 'null']
+          format: date-time
+        note:
+          type: [string, 'null']
+    AdminUser:
+      type: object
+      required: [id, email, status, credits, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        email: {type: string}
+        status:
+          type: string
+          enum: [pending, active, suspended, deleted]
+        credits: {type: integer}
+        jobs_total: {type: integer}
+        created_at: {type: string, format: date-time}
+        last_login_at:
+          type: [string, 'null']
+          format: date-time
+    UsageDay:
+      type: object
+      required: [day, cost_usd, jobs_started, jobs_succeeded, jobs_failed]
+      properties:
+        day: {type: string, format: date}
+        cost_usd: {type: number}
+        cap_usd: {type: number}
+        paused: {type: boolean}
+        jobs_started: {type: integer}
+        jobs_succeeded: {type: integer}
+        jobs_failed: {type: integer}
+        grade_a: {type: integer}
+        grade_b: {type: integer}
+        grade_c: {type: integer}
+    PrivacyClass:
+      type: string
+      enum: [standard, private]
+    GroupTier:
+      type: string
+      enum: [free, trial, paid, self_hosted]
+    DataPolicy:
+      type: string
+      enum: [no_training, may_train, unknown]
+    StyleCoreStatus:
+      type: string
+      enum: [draft, in_review, approved, rejected, deprecated]
+    CurationKind:
+      type: string
+      enum: [style_core_proposal, style_core_test_drive, glossary_bootstrap]
+    PoolLimits:
+      type: object
+      properties:
+        rpm:
+          type: [integer, 'null']
+          minimum: 1
+        tpm:
+          type: [integer, 'null']
+          minimum: 1
+        rpd:
+          type: [integer, 'null']
+          minimum: 1
+        tpd:
+          type: [integer, 'null']
+          minimum: 1
+        concurrency:
+          type: [integer, 'null']
+          minimum: 1
+    PoolGroup:
+      type: object
+      required: [id, provider, tier, data_policy, enabled]
+      properties:
+        id: {type: string}
+        provider: {type: string}
+        label: {type: string}
+        tier: {$ref: '#/components/schemas/GroupTier'}
+        data_policy: {$ref: '#/components/schemas/DataPolicy'}
+        tos_flags:
+          type: array
+          items:
+            type: string
+            enum: [trial_only, no_personal_data, multi_account_risk, no_eea_uk_ch]
+        allowed_gates:
+          type: array
+          items:
+            type: string
+            enum: [dev, A, B, C]
+        safety_margin: {type: number}
+        day_margin: {type: number}
+        limits: {$ref: '#/components/schemas/PoolLimits'}
+        enabled: {type: boolean}
+        risk_ack:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [multi_account_risk, trial_only]
+          description: Cờ rủi ro điều khoản đã được chủ hệ thống xác nhận chấp nhận. Nhóm có cờ tương ứng trong tos_flags mà thiếu xác nhận không được bật (409 risk_ack_required) và không bao giờ được chọn.
+    PoolGroupPatch:
+      type: object
+      properties:
+        enabled: {type: boolean}
+        data_policy: {$ref: '#/components/schemas/DataPolicy'}
+        tos_flags:
+          type: array
+          items:
+            type: string
+            enum: [trial_only, no_personal_data, multi_account_risk, no_eea_uk_ch]
+        allowed_gates:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [dev, A, B, C]
+        safety_margin: {type: number, minimum: 0.3, maximum: 1}
+        day_margin: {type: number, minimum: 0.5, maximum: 1}
+        limits: {$ref: '#/components/schemas/PoolLimits'}
+        risk_ack:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [multi_account_risk, trial_only]
+          description: Cờ rủi ro điều khoản đã được chủ hệ thống xác nhận chấp nhận. Nhóm có cờ tương ứng trong tos_flags mà thiếu xác nhận không được bật (409 risk_ack_required) và không bao giờ được chọn.
+    PoolDeploymentPatch:
+      type: object
+      properties:
+        enabled: {type: boolean}
+        weight: {type: number, exclusiveMinimum: 0}
+        tags:
+          type: array
+          items: {type: string}
+        limits: {$ref: '#/components/schemas/PoolLimits'}
+    PoolDeploymentStatus:
+      type: object
+      required: [id, group_id, model, tier, enabled, circuit, headroom]
+      properties:
+        id: {type: string}
+        group_id: {type: string}
+        model: {type: string}
+        tier: {$ref: '#/components/schemas/GroupTier'}
+        data_policy: {$ref: '#/components/schemas/DataPolicy'}
+        enabled: {type: boolean}
+        circuit:
+          type: string
+          enum: [closed, open, half_open]
+        cooldown_until:
+          type: [string, 'null']
+          format: date-time
+        headroom: {type: number, minimum: 0, maximum: 1}
+        inflight: {type: integer}
+        rpd_used: {type: integer}
+        rpd_limit:
+          type: [integer, 'null']
+        ewma_success: {type: number}
+        ewma_latency_ms:
+          type: [number, 'null']
+        active_credentials: {type: integer}
+        limits: {$ref: '#/components/schemas/PoolLimits'}
+    PoolCredential:
+      type: object
+      required: [id, group_id, label, status]
+      properties:
+        id: {type: string}
+        group_id: {type: string}
+        label: {type: string}
+        last4:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [active, quarantined, disabled]
+        quarantined_reason:
+          type: [string, 'null']
+        last_used_at:
+          type: [string, 'null']
+          format: date-time
+    PoolCredentialCreate:
+      type: object
+      required: [label, secret]
+      properties:
+        label: {type: string, maxLength: 120}
+        secret: {type: string, minLength: 16, maxLength: 400, writeOnly: true}
+    PoolCapacity:
+      type: object
+      required: [privacy_class, eligible_deployments, docs_per_day]
+      properties:
+        privacy_class: {$ref: '#/components/schemas/PrivacyClass'}
+        eligible_deployments: {type: integer}
+        calls_per_day:
+          type: [integer, 'null']
+        tokens_in_per_day:
+          type: [integer, 'null']
+        docs_per_day:
+          type: array
+          items:
+            type: object
+            required: [level, words, docs]
+            properties:
+              level: {$ref: '#/components/schemas/Level'}
+              words: {type: integer}
+              docs:
+                type: [number, 'null']
+                description: null = không có giới hạn đã biết
+    PoolImportResult:
+      type: object
+      required: [valid, applied, errors, diff]
+      properties:
+        valid: {type: boolean}
+        applied: {type: boolean}
+        errors:
+          type: array
+          items: {type: string}
+        diff:
+          type: object
+          properties:
+            added:
+              type: array
+              items: {type: string}
+            removed:
+              type: array
+              items: {type: string}
+            changed:
+              type: array
+              items: {type: string}
+    ProbeRun:
+      type: object
+      required: [id, deployment_id, passed]
+      properties:
+        id: {type: integer}
+        deployment_id: {type: string}
+        ran_at: {type: string, format: date-time}
+        passed: {type: boolean}
+        results: {type: object}
+        note:
+          type: [string, 'null']
+    PoolIncident:
+      type: object
+      required: [id, at, kind]
+      properties:
+        id: {type: integer}
+        at: {type: string, format: date-time}
+        deployment_id:
+          type: [string, 'null']
+        credential_id:
+          type: [string, 'null']
+        kind: {type: string}
+        detail: {type: object}
+    StyleCoreSummary:
+      type: object
+      required: [id, slug, name, scope]
+      properties:
+        id: {type: string, format: uuid}
+        slug: {type: string}
+        name: {type: string}
+        domain:
+          type: [string, 'null']
+        locale: {type: string}
+        scope:
+          type: string
+          enum: [system, personal]
+        parent_id:
+          type: [string, 'null']
+          format: uuid
+        latest_approved_version:
+          type: [string, 'null']
+    StyleCoreVersion:
+      type: object
+      required: [id, style_core_id, version, status, origin, content]
+      properties:
+        id: {type: string, format: uuid}
+        style_core_id: {type: string, format: uuid}
+        version: {type: string, pattern: '^[0-9]+\.[0-9]+\.[0-9]+$'}
+        status: {$ref: '#/components/schemas/StyleCoreStatus'}
+        origin:
+          type: string
+          enum: [human, ai_proposal, import]
+        content: {type: object, description: StyleCore - schemas/style_core.schema.json}
+        content_sha256: {type: string}
+        open_decisions:
+          type: array
+          items: {type: object}
+        problems:
+          type: array
+          items:
+            type: object
+            properties:
+              severity:
+                type: string
+                enum: [error, warning]
+              path: {type: string}
+              message: {type: string}
+        created_at: {type: string, format: date-time}
+        approved_at:
+          type: [string, 'null']
+          format: date-time
+        note:
+          type: [string, 'null']
+    StyleCoreCreate:
+      type: object
+      required: [slug, name]
+      properties:
+        slug: {type: string, pattern: '^[a-z0-9-]{3,60}$'}
+        name: {type: string, maxLength: 120}
+        domain: {type: string, maxLength: 60}
+        parent_id:
+          type: [string, 'null']
+          format: uuid
+        content: {type: object}
+    StyleCoreVersionCreate:
+      type: object
+      required: [base_version_id, bump]
+      properties:
+        base_version_id: {type: string, format: uuid}
+        bump:
+          type: string
+          enum: [patch, minor, major]
+    StyleCoreEdit:
+      type: object
+      required: [content]
+      properties:
+        content: {type: object, description: StyleCore đầy đủ - schemas/style_core.schema.json}
+        comment: {type: string, maxLength: 1000}
+    DecisionAnswer:
+      type: object
+      required: [decision_id, answer]
+      properties:
+        decision_id: {type: string, pattern: '^D[0-9]{2}$'}
+        answer: {type: string, maxLength: 200}
+    TestDriveRequest:
+      type: object
+      required: [paragraphs]
+      properties:
+        paragraphs:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            required: [text]
+            properties:
+              pid: {type: string}
+              text: {type: string, maxLength: 4000}
+        compare_to_version_id:
+          type: [string, 'null']
+          format: uuid
+    StyleProposeRequest:
+      type: object
+      required: [mode, brief_vi]
+      properties:
+        mode:
+          type: string
+          enum: [bootstrap, refine]
+        brief_vi: {type: string, maxLength: 3000}
+        sample_document_ids:
+          type: array
+          maxItems: 10
+          items: {type: string, format: uuid}
+        reference_pairs:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [source, target]
+            properties:
+              source: {type: string, maxLength: 600}
+              target: {type: string, maxLength: 800}
+        base_version_id:
+          type: [string, 'null']
+          format: uuid
+    CurationRun:
+      type: object
+      required: [id, kind, status]
+      properties:
+        id: {type: string, format: uuid}
+        kind: {$ref: '#/components/schemas/CurationKind'}
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, canceled]
+        params: {type: object}
+        result:
+          type: [object, 'null']
+        cost_usd: {type: number}
+        error_code:
+          type: [string, 'null']
+        created_at: {type: string, format: date-time}
+        started_at:
+          type: [string, 'null']
+          format: date-time
+        finished_at:
+          type: [string, 'null']
+          format: date-time
+    GlossaryReviewItem:
+      allOf:
+      - {$ref: '#/components/schemas/GlossaryEntry'}
+      - type: object
+        required: [glossary_id]
+        properties:
+          glossary_id: {type: string, format: uuid}
+          evidence:
+            type: array
+            items:
+              type: object
+              properties:
+                doc_ref: {type: string}
+                snippet: {type: string}
+    GlossaryDecision:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [approve, reject, edit_approve]
+        target_term: {type: string, maxLength: 160}
+        keep_original: {type: boolean}
+        forbidden_variants:
+          type: array
+          maxItems: 10
+          items: {type: string}
+        note: {type: string, maxLength: 300}
+    GlossaryRelease:
+      type: object
+      required: [id, glossary_id, version, entry_count]
+      properties:
+        id: {type: string, format: uuid}
+        glossary_id: {type: string, format: uuid}
+        version: {type: integer, minimum: 1}
+        entry_count: {type: integer}
+        content_sha256: {type: string}
+        released_at: {type: string, format: date-time}
+        note:
+          type: [string, 'null']
+    GlossaryBootstrapRequest:
+      type: object
+      required: [glossary_id, sample_document_ids]
+      properties:
+        glossary_id: {type: string, format: uuid}
+        sample_document_ids:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: {type: string, format: uuid}
+        reference_pairs:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [source, target]
+            properties:
+              source: {type: string}
+              target: {type: string}
+        style_core_id:
+          type: [string, 'null']
+          format: uuid
+    DeclareResult:
+      type: object
+      required: [valid, applied, errors, warnings, preview]
+      properties:
+        valid: {type: boolean}
+        applied: {type: boolean}
+        errors:
+          type: array
+          items: {type: string}
+        warnings:
+          type: array
+          items: {type: string}
+        preview:
+          type: object
+          properties:
+            counts:
+              type: object
+              properties:
+                groups: {type: integer}
+                new_groups: {type: integer}
+                keys: {type: integer}
+                skipped_keys: {type: integer}
+                deployments: {type: integer}
+                models: {type: integer}
+                providers: {type: integer}
+            groups:
+              type: array
+              items:
+                type: object
+                properties:
+                  id: {type: string}
+                  existing: {type: boolean}
+                  tier: {$ref: '#/components/schemas/GroupTier'}
+                  data_policy: {$ref: '#/components/schemas/DataPolicy'}
+                  tos_flags:
+                    type: array
+                    items: {type: string}
+                  allowed_gates:
+                    type: array
+                    items: {type: string}
+                  risk_ack:
+                    type: array
+                    items: {type: string}
+                  account_limits:
+                    type: [object, 'null']
+                  credentials:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        last4: {type: string}
+                        status: {type: string}
+                  deployments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        model: {type: string}
+                        limits: {$ref: '#/components/schemas/PoolLimits'}
+                        limits_source: {type: string}
+            skipped_keys:
+              type: array
+              description: Khoá bị bỏ qua và lý do (trùng, quá ngắn, sai định dạng, giữ chỗ). Không bao giờ chứa khoá đầy đủ.
+              items:
+                type: object
+                properties:
+                  label:
+                    type: [string, 'null']
+                  last4: {type: string}
+                  status:
+                    type: string
+                    enum: [duplicate_in_request, duplicate_existing, too_short, invalid, placeholder]
+                  reason: {type: string}
+            validate_keys:
+              type: string
+              enum: [pending, ok, failed]

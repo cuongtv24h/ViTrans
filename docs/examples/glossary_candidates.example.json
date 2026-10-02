@@ -1,0 +1,37 @@
+{
+  "candidates": [
+    {
+      "source_term": "Solar Plexus",
+      "target_term": "Trung tâm Thái dương",
+      "keep_original": true,
+      "alternatives": ["Đám rối thái dương"],
+      "term_type": "concept",
+      "rationale_vi": "Thuật ngữ cốt lõi, xuất hiện nhiều; cần cố định một cách dịch cho cả tài liệu.",
+      "confidence": 0.7,
+      "occurrences": 2,
+      "first_pid": "P000102"
+    },
+    {
+      "source_term": "Gate",
+      "target_term": "Cổng",
+      "keep_original": false,
+      "alternatives": [],
+      "term_type": "concept",
+      "rationale_vi": "Đơn vị được đánh số (Gate 55, Gate 49); dịch sát nghĩa, giữ nguyên số.",
+      "confidence": 0.9,
+      "occurrences": 3,
+      "first_pid": "P000103"
+    },
+    {
+      "source_term": "Sleeping Phoenix",
+      "target_term": "Sleeping Phoenix",
+      "keep_original": false,
+      "alternatives": ["Phượng hoàng ngủ"],
+      "term_type": "proper_name",
+      "rationale_vi": "Tên riêng của một chu kỳ; nên giữ nguyên, người dùng có thể đổi.",
+      "confidence": 0.6,
+      "occurrences": 1,
+      "first_pid": "P000105"
+    }
+  ]
+}
