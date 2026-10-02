@@ -235,3 +235,73 @@ def test_end_to_end_demo_run_scores_pass(tmp_path):
     assert report["metrics"]["trap_fact_errors"] == 0
     assert report["metrics"]["fabricated_remaining"] == 0
     assert (artifacts / "report.md").read_text(encoding="utf-8").startswith("#")
+
+
+# ------------------------------------------------------------------ so baseline (§16.3)
+
+
+def _load_compare():
+    spec = importlib.util.spec_from_file_location("visynth_eval_compare", ROOT / "eval" / "compare_baseline.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _score_file(tmp_path: Path, doc_id: str, metrics: dict, *, folder: str = "run") -> Path:
+    d = tmp_path / folder / doc_id
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / "score.json"
+    path.write_text(json.dumps({"doc_id": doc_id, "metrics": metrics}), encoding="utf-8")
+    return path
+
+
+def test_compare_baseline_passes_on_identical_runs(tmp_path):
+    compare = _load_compare()
+    for folder in ("a", "b"):
+        _score_file(
+            tmp_path, "doc1", {"coverage_core": 0.95, "faithfulness_rate": 0.99, "trap_fact_errors": 0}, folder=folder
+        )
+    report = compare.compare(compare.load_scores(tmp_path / "a"), compare.load_scores(tmp_path / "b"))
+    assert report["summary"]["verdict"] == "pass"
+    assert report["summary"]["documents_compared"] == 1
+
+
+def test_compare_baseline_blocks_on_coverage_drop_and_new_trap_error(tmp_path):
+    compare = _load_compare()
+    _score_file(tmp_path, "doc1", {"coverage_core": 0.95, "faithfulness_rate": 0.99, "trap_fact_errors": 0}, folder="a")
+    _score_file(tmp_path, "doc1", {"coverage_core": 0.91, "faithfulness_rate": 0.96, "trap_fact_errors": 1}, folder="b")
+    report = compare.compare(compare.load_scores(tmp_path / "a"), compare.load_scores(tmp_path / "b"))
+    blocked = {b["metric"] for b in report["summary"]["blocking"]}
+    assert report["summary"]["verdict"] == "block"
+    assert {"coverage_core", "faithfulness_rate", "trap_fact_errors"} <= blocked
+
+
+def test_compare_baseline_blocks_on_cost_and_p95_time(tmp_path):
+    compare = _load_compare()
+    docs = ["d1", "d2", "d3", "d4"]
+    for i, doc in enumerate(docs):
+        _score_file(tmp_path, doc, {"cost_usd": 1.0, "seconds": 10.0 + i}, folder="a")
+        _score_file(tmp_path, doc, {"cost_usd": 1.5, "seconds": 20.0 + i}, folder="b")
+    report = compare.compare(compare.load_scores(tmp_path / "a"), compare.load_scores(tmp_path / "b"))
+    blocked = {b["metric"] for b in report["summary"]["blocking"]}
+    assert {"cost_usd", "seconds_p95"} <= blocked
+    assert report["summary"]["p95_seconds"]["baseline"] is not None
+    assert "CHẶN" in compare.to_markdown(report)
+
+
+def test_compare_baseline_reports_missing_documents_without_blocking(tmp_path):
+    compare = _load_compare()
+    _score_file(tmp_path, "d1", {"coverage_core": 1.0}, folder="a")
+    _score_file(tmp_path, "d2", {"coverage_core": 1.0}, folder="a")
+    _score_file(tmp_path, "d1", {"coverage_core": 1.0}, folder="b")
+    report = compare.compare(compare.load_scores(tmp_path / "a"), compare.load_scores(tmp_path / "b"))
+    assert report["summary"]["missing"] == ["d2"]
+    assert report["summary"]["verdict"] == "pass"  # thiếu tài liệu là cảnh báo, không phải chặn
+    assert "thiếu kết quả cho d2" in compare.to_markdown(report)
+
+
+def test_score_run_includes_seconds_from_artifact():
+    run = _run("x", [], duration_ms=12_500)
+    report = score.score_run(run, META)
+    assert report["metrics"]["seconds"] == 12.5
+    assert report["gates"]["seconds"]["applicable"] is False  # §2.2 so theo số trang, làm ở bước so baseline

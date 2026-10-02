@@ -13,3 +13,4 @@
 | `unresolved_numbers` | 0 | ≤ 0 | ✅ |
 | `length_ratio` | 0.9944 | ≥ 0.8 và ≤ 1.25 | ✅ |
 | `cost_usd` | — | §2.2 — cần chạy thật (có sổ llm_calls) | không áp dụng |
+| `seconds` | — | §2.2 — so theo số trang ở tầng so baseline (`eval/compare_baseline.py`) | không áp dụng |

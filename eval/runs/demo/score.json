@@ -12,7 +12,8 @@
     "trap_fact_errors": 0,
     "unresolved_numbers": 0,
     "length_ratio": 0.9944,
-    "cost_usd": null
+    "cost_usd": null,
+    "seconds": 0.0
   },
   "gates": {
     "coverage_core": {
@@ -75,6 +76,11 @@
       "applicable": false,
       "value": null,
       "note": "§2.2 — cần chạy thật (có sổ llm_calls)"
+    },
+    "seconds": {
+      "applicable": false,
+      "value": 0.0,
+      "note": "§2.2 — so theo số trang ở tầng so baseline (`eval/compare_baseline.py`)"
     }
   },
   "blocking": [],

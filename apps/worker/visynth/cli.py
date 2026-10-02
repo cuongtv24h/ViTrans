@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -142,6 +143,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     from visynth.pipeline.run import run_document
 
     options = JobOptions(level=args.level)
+    started = time.monotonic()
     client_note = ""
     ledger = None
     if args.path and not args.demo:
@@ -202,6 +204,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             "words": result.stats.get("source_words"),
             "title": result.title,
         },
+        "duration_ms": int((time.monotonic() - started) * 1000),
         "params": {
             "level": result.level,
             "seed": args.seed,

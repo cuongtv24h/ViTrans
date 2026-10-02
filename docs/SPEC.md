@@ -1527,6 +1527,8 @@ Bộ chấm tự động của M0 nằm ở `eval/score.py` (chấm `run.json` d
 
 Chạy tập con 6 tài liệu và **chặn phát hành** khi đổi prompt, model, cấu hình pool (thêm/bỏ deployment, đổi `needs.min_quality`, đổi thứ tự tầng) hoặc phiên bản Lõi văn phong, nếu: `coverage_core` giảm > 0.03, `faithfulness_rate` giảm > 0.02, có lỗi trap fact, chi phí tăng > 20%, hoặc p95 thời gian tăng > 30% so với baseline.
 
+Công cụ M0: `eval/compare_baseline.py --baseline … --candidate …` so hai thư mục kết quả trong `eval/runs/` theo đúng các ngưỡng trên (mã thoát 1 khi chặn).
+
 ### 16.4 Bake-off chọn model (Giai đoạn 0)
 
 3 cấu hình profile × 5 tài liệu; chấm mù theo cặp so với bản tham chiếu; chọn cấu hình **rẻ nhất đạt ngưỡng** §2.2. Thử riêng một `verifier` thuộc họ model khác `writer` để xem có giảm lỗi tương quan không. Với pool, bài này gồm thêm: (a) chạy bài kiểm định (`probe`, §17.9) cho từng deployment ứng viên và ghi điểm `json`, `vi_write`, `long_context`; (b) đo hạn mức thật (đọc bảng điều khiển, đối chiếu với lỗi 429) và nhập vào `limits`; (c) đo `tokenizer_factor` thật; (d) chạy `declare` + `probe` cho các khoá thật, ghi ngày kiểm tra vào `notes` của nhóm (§17.14); (e) khởi tạo Lõi văn phong và glossary cho lĩnh vực đầu tiên bằng quy trình §19.9 rồi chạy golden set. Ghi kết quả vào `eval/` và cập nhật `pool_config` (`quality`, `limits`, `tiers`).

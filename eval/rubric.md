@@ -56,7 +56,9 @@ Chạy tập con 6 tài liệu trước/sau khi đổi prompt, model, cấu hìn
 | `cost_usd` | tăng > 20% |
 | `seconds_p95` | tăng > 30% |
 
-Hằng số nằm trong `score.py` (`REGRESSION_LIMITS`) để bộ so baseline dùng lại; xem `eval/runs/` để lấy baseline.
+Hằng số nằm trong `score.py` (`REGRESSION_LIMITS`). Chạy `python eval/compare_baseline.py --baseline <thư mục cũ>
+--candidate <thư mục mới>`: mã thoát 1 nghĩa là **chặn phát hành**; báo cáo Markdown liệt kê từng tài liệu và
+từng chỉ số vượt ngưỡng. Tài liệu thiếu ở lần chạy mới chỉ là cảnh báo (nhớ chạy đủ tập con 6 tài liệu).
 
 ## 4. Quy trình một vòng đánh giá
 

@@ -761,6 +761,7 @@
     "words": 315,
     "title": "demo_lecture"
   },
+  "duration_ms": 46,
   "params": {
     "level": "deep_synthesis",
     "seed": 7,

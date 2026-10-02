@@ -286,6 +286,7 @@ def score_run(run: dict, meta: dict, *, model: str = "gemini-3.8-flash", on: dat
     unresolved, unresolved_detail = unresolved_numbers(run)
     length_ratio, length_detail = length(run, meta)
     cost_info = cost(run, price)
+    duration_ms = run.get("duration_ms")
 
     metrics = {
         "coverage_core": cov,
@@ -297,6 +298,7 @@ def score_run(run: dict, meta: dict, *, model: str = "gemini-3.8-flash", on: dat
         "unresolved_numbers": unresolved,
         "length_ratio": length_ratio,
         "cost_usd": cost_info.get("cost_usd"),
+        "seconds": round(duration_ms / 1000, 1) if duration_ms else None,
     }
     gates: dict[str, dict] = {}
     for key, rule in THRESHOLDS.items():
@@ -319,6 +321,12 @@ def score_run(run: dict, meta: dict, *, model: str = "gemini-3.8-flash", on: dat
         }
     if not cost_info.get("applicable"):
         gates["cost_usd"] = {"applicable": False, "value": None, "note": "§2.2 — cần chạy thật (có sổ llm_calls)"}
+    # §2.2: p50 ≤ 6 phút/100 trang, p95 ≤ 20 phút/400 trang — chỉ chấm được khi artifact có `duration_ms`
+    gates["seconds"] = {
+        "applicable": False,
+        "value": metrics["seconds"],
+        "note": "§2.2 — so theo số trang ở tầng so baseline (`eval/compare_baseline.py`)",
+    }
     blocking = [k for k, g in gates.items() if g.get("applicable") and not g.get("pass")]
     return {
         "doc_id": meta.get("doc_id"),
