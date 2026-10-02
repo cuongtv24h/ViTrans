@@ -1241,7 +1241,9 @@ def build_parser() -> argparse.ArgumentParser:
     q.set_defaults(func=cmd_style_compare)
 
     w = sub.add_parser("worker", help="Worker production (M1): hàng đợi task PostgreSQL + pipeline P0–P8")
-    w.add_argument("--db-dsn", default=os.environ.get("VISYNTH_DB_DSN", ""), help="chuỗi kết nối PostgreSQL (hoặc VISYNTH_DB_DSN)")
+    w.add_argument(
+        "--db-dsn", default=os.environ.get("VISYNTH_DB_DSN", ""), help="chuỗi kết nối PostgreSQL (hoặc VISYNTH_DB_DSN)"
+    )
     w.add_argument("--worker-id", default=os.environ.get("VISYNTH_WORKER_ID", "worker-1"))
     w.add_argument("--limit", type=int, default=1, help="số task nhận mỗi lượt")
     w.add_argument("--per-job", type=int, default=1, help="số task chạy song song cho một job")
