@@ -1,0 +1,249 @@
+{
+  "doc_id": "demo_lecture",
+  "title": "Ghi chú bài giảng (tài liệu mẫu cho M0)",
+  "level": "deep_synthesis",
+  "grade": "A",
+  "metrics": {
+    "coverage_core": 1.0,
+    "faithfulness_rate": 1.0,
+    "fabricated_remaining": 0,
+    "terminology_consistency": 1.0,
+    "trap_facts_accuracy": 1.0,
+    "trap_fact_errors": 0,
+    "unresolved_numbers": 0,
+    "length_ratio": 0.9944,
+    "cost_usd": null
+  },
+  "gates": {
+    "coverage_core": {
+      "applicable": true,
+      "value": 1.0,
+      "min": 0.9,
+      "max": null,
+      "pass": true,
+      "note": "§2.2; hạng A cần ≥ 0.95"
+    },
+    "faithfulness_rate": {
+      "applicable": true,
+      "value": 1.0,
+      "min": 0.97,
+      "max": null,
+      "pass": true,
+      "note": "§2.2"
+    },
+    "fabricated_remaining": {
+      "applicable": true,
+      "value": 0,
+      "min": null,
+      "max": 0,
+      "pass": true,
+      "note": "§2.2: số khối fabricated còn sót = 0"
+    },
+    "terminology_consistency": {
+      "applicable": true,
+      "value": 1.0,
+      "min": 0.98,
+      "max": null,
+      "pass": true,
+      "note": "§2.2"
+    },
+    "trap_fact_errors": {
+      "applicable": true,
+      "value": 0,
+      "min": null,
+      "max": 0,
+      "pass": true,
+      "note": "§2.2: số liệu sai chưa giải quyết = 0"
+    },
+    "unresolved_numbers": {
+      "applicable": true,
+      "value": 0,
+      "min": null,
+      "max": 0,
+      "pass": true,
+      "note": "§2.2 (số/ngày không tìm thấy trong nguồn)"
+    },
+    "length_ratio": {
+      "applicable": true,
+      "value": 0.9944,
+      "min": 0.8,
+      "max": 1.25,
+      "pass": true,
+      "note": "lệch quá ±20% so với ngân sách độ dài"
+    },
+    "cost_usd": {
+      "applicable": false,
+      "value": null,
+      "note": "§2.2 — cần chạy thật (có sổ llm_calls)"
+    }
+  },
+  "blocking": [],
+  "verdict": "pass",
+  "detail": {
+    "coverage_core": {
+      "báo cáo tổng hợp": {
+        "status": "yes",
+        "variants": [
+          "tổng hợp",
+          "bản tổng hợp"
+        ]
+      },
+      "đơn vị tri thức": {
+        "status": "yes",
+        "variants": [
+          "đơn vị tri thức nào là cốt lõi"
+        ]
+      },
+      "trích dẫn nguồn": {
+        "status": "yes",
+        "variants": [
+          "trích dẫn"
+        ]
+      },
+      "số liệu": {
+        "status": "yes",
+        "variants": [
+          "con số"
+        ]
+      },
+      "thuật ngữ": {
+        "status": "yes",
+        "variants": [
+          "bảng thuật ngữ",
+          "bảng đã duyệt"
+        ]
+      },
+      "kiểm tra tất định": {
+        "status": "yes",
+        "variants": [
+          "kiểm tra bằng code",
+          "nhóm kiểm tra"
+        ]
+      },
+      "đường thoát an toàn": {
+        "status": "yes",
+        "variants": [
+          "đường thoát an toàn khi không chắc",
+          "đánh cờ thay vì đoán"
+        ]
+      },
+      "bốn mức đầu ra": {
+        "status": "yes",
+        "variants": [
+          "các mức đầu ra",
+          "bốn mức"
+        ]
+      },
+      "hỏi đáp": {
+        "status": "yes",
+        "variants": []
+      },
+      "ý của tác giả": {
+        "status": "yes",
+        "variants": [
+          "ý của tác giả và câu nào"
+        ]
+      },
+      "tên riêng": {
+        "status": "yes",
+        "variants": []
+      },
+      "bản quyền": {
+        "status": "yes",
+        "variants": [
+          "không trích từ nguồn có bản quyền"
+        ]
+      }
+    },
+    "faithfulness": {
+      "blocks": 9,
+      "not_ok": [],
+      "verdicts": {
+        "supported": 9
+      }
+    },
+    "terminology": {
+      "terms": 3,
+      "occurrences": 5,
+      "violations": []
+    },
+    "trap_facts": {
+      "facts": 5,
+      "detail": [
+        {
+          "fact": "90 phút",
+          "kind": "number",
+          "status": "ok",
+          "wrong": null
+        },
+        {
+          "fact": "100% nguồn",
+          "kind": "number",
+          "status": "ok",
+          "wrong": null
+        },
+        {
+          "fact": "35%",
+          "kind": "number",
+          "status": "ok",
+          "wrong": null
+        },
+        {
+          "fact": "12%",
+          "kind": "number",
+          "status": "ok",
+          "wrong": null
+        },
+        {
+          "fact": "3%",
+          "kind": "number",
+          "status": "ok",
+          "wrong": null
+        }
+      ]
+    },
+    "unresolved_numbers": {
+      "detail": []
+    },
+    "length": {
+      "report_words": 895,
+      "target_words": 900
+    },
+    "cost": {
+      "applicable": false,
+      "reason": "không có sổ llm_calls (kịch bản giả)",
+      "cost_usd": null
+    },
+    "stats": {
+      "coverage_core": 1.0,
+      "faithfulness_rate": 1.0,
+      "unresolved_blocks": 0,
+      "blocks_total": 9,
+      "blocks_removed": 0,
+      "units_total": 12,
+      "units_core": 8,
+      "units_unverified": 0,
+      "grade": "A",
+      "source_words": 315,
+      "report_words": 895,
+      "units_supporting": 1,
+      "units_minor": 3,
+      "units_merged": 0,
+      "units_omitted": 3,
+      "omitted_by_reason": {
+        "level_policy": 3
+      },
+      "sections": 4,
+      "blocks_flagged": 0,
+      "paragraph_labels": {
+        "core": 13,
+        "admin": 1,
+        "qa": 3
+      },
+      "llm_calls": 14,
+      "llm_tokens_in": 19465,
+      "llm_tokens_out": 3433
+    },
+    "warnings": []
+  }
+}

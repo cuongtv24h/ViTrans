@@ -1,0 +1,771 @@
+{
+  "title": "demo_lecture",
+  "level": "deep_synthesis",
+  "grade": "A",
+  "metrics": {
+    "coverage_core": 1.0,
+    "faithfulness_rate": 1.0,
+    "unresolved_blocks": 0,
+    "blocks_total": 9,
+    "blocks_removed": 0,
+    "units_total": 12,
+    "units_core": 8,
+    "units_unverified": 0,
+    "grade": "A"
+  },
+  "stats": {
+    "coverage_core": 1.0,
+    "faithfulness_rate": 1.0,
+    "unresolved_blocks": 0,
+    "blocks_total": 9,
+    "blocks_removed": 0,
+    "units_total": 12,
+    "units_core": 8,
+    "units_unverified": 0,
+    "grade": "A",
+    "source_words": 315,
+    "report_words": 895,
+    "units_supporting": 1,
+    "units_minor": 3,
+    "units_merged": 0,
+    "units_omitted": 3,
+    "omitted_by_reason": {
+      "level_policy": 3
+    },
+    "sections": 4,
+    "blocks_flagged": 0,
+    "paragraph_labels": {
+      "core": 13,
+      "admin": 1,
+      "qa": 3
+    },
+    "llm_calls": 14,
+    "llm_tokens_in": 19465,
+    "llm_tokens_out": 3433
+  },
+  "warnings": [],
+  "sections": [
+    {
+      "id": "S01",
+      "title_vi": "Tóm tắt điều hành",
+      "unit_ids": [
+        "U-0001",
+        "U-0002"
+      ],
+      "target_words": 82
+    },
+    {
+      "id": "S02",
+      "title_vi": "Ba câu hỏi trước khi viết báo cáo",
+      "unit_ids": [
+        "U-0003",
+        "U-0004",
+        "U-0005"
+      ],
+      "target_words": 72
+    },
+    {
+      "id": "S03",
+      "title_vi": "Các mức đầu ra theo tỷ lệ độ dài",
+      "unit_ids": [
+        "U-0006"
+      ],
+      "target_words": 51
+    },
+    {
+      "id": "S04",
+      "title_vi": "Kiểm tra tất định và nguyên tắc kết luận",
+      "unit_ids": [
+        "U-0007",
+        "U-0008",
+        "U-0012"
+      ],
+      "target_words": 82
+    }
+  ],
+  "blocks": [
+    {
+      "block_id": "S01.b01",
+      "cites": [
+        "U-0001"
+      ],
+      "verdict": "supported",
+      "flagged": false,
+      "removed": false
+    },
+    {
+      "block_id": "S01.b02",
+      "cites": [
+        "U-0002"
+      ],
+      "verdict": "supported",
+      "flagged": false,
+      "removed": false
+    },
+    {
+      "block_id": "S02.b01",
+      "cites": [
+        "U-0003"
+      ],
+      "verdict": "supported",
+      "flagged": false,
+      "removed": false
+    },
+    {
+      "block_id": "S02.b02",
+      "cites": [
+        "U-0004"
+      ],
+      "verdict": "supported",
+      "flagged": false,
+      "removed": false
+    },
+    {
+      "block_id": "S02.b03",
+      "cites": [
+        "U-0005"
+      ],
+      "verdict": "supported",
+      "flagged": false,
+      "removed": false
+    },
+    {
+      "block_id": "S03.b01",
+      "cites": [
+        "U-0006"
+      ],
+      "verdict": "supported",
+      "flagged": false,
+      "removed": false
+    },
+    {
+      "block_id": "S04.b01",
+      "cites": [
+        "U-0007"
+      ],
+      "verdict": "supported",
+      "flagged": false,
+      "removed": false
+    },
+    {
+      "block_id": "S04.b02",
+      "cites": [
+        "U-0008"
+      ],
+      "verdict": "supported",
+      "flagged": false,
+      "removed": false
+    },
+    {
+      "block_id": "S04.b03",
+      "cites": [
+        "U-0012"
+      ],
+      "verdict": "supported",
+      "flagged": false,
+      "removed": false
+    }
+  ],
+  "units": [
+    {
+      "id": "U-0001",
+      "segment_id": "SEG-001",
+      "local_id": "u1",
+      "type": "admin",
+      "importance": "core",
+      "title_vi": "Nguồn gốc tài liệu mẫu",
+      "statement_vi": "Tài liệu này là ghi chú bài giảng do nhóm ViSynth tự viết để thử quy trình tổng hợp, không trích từ nguồn có bản quyền và cũng không nhằm dùng làm dẫn chứng học thuật cho bất kỳ kết luận nào.",
+      "topics": [
+        "tổng hợp",
+        "kiểm chứng"
+      ],
+      "evidence": [
+        {
+          "pid": "P000002",
+          "quote": "Tài liệu này do nhóm ViSynth tự viết để thử pipeline; không phải trích từ nguồn có bản quyền."
+        }
+      ],
+      "numbers": [],
+      "terms": [
+        "pipeline"
+      ],
+      "relations": [],
+      "attribution": "unclear",
+      "state": "active",
+      "merged_into": null,
+      "section_id": "S01",
+      "omitted_reason": null
+    },
+    {
+      "id": "U-0002",
+      "segment_id": "SEG-001",
+      "local_id": "u2",
+      "type": "argument",
+      "importance": "core",
+      "title_vi": "Vì sao cần tổng hợp thay vì dịch thô",
+      "statement_vi": "Một bài giảng 90 phút thường lặp lại phần giới thiệu, phần nhắc lại, ví dụ và hỏi đáp, nên dịch nguyên văn buộc người đọc tự lọc bỏ; báo cáo tổng hợp giữ ý cốt lõi kèm trích dẫn nguồn.",
+      "topics": [
+        "tổng hợp",
+        "kiểm chứng"
+      ],
+      "evidence": [
+        {
+          "pid": "P000004",
+          "quote": "Một bài giảng 90 phút thường chứa rất nhiều phần lặp lại: giới thiệu, nhắc lại, ví dụ,\nhỏi đáp."
+        }
+      ],
+      "numbers": [
+        "90"
+      ],
+      "terms": [],
+      "relations": [],
+      "attribution": "author",
+      "state": "active",
+      "merged_into": null,
+      "section_id": "S01",
+      "omitted_reason": null
+    },
+    {
+      "id": "U-0003",
+      "segment_id": "SEG-001",
+      "local_id": "u3",
+      "type": "qa",
+      "importance": "core",
+      "title_vi": "Câu hỏi thứ nhất: đơn vị nào là cốt lõi",
+      "statement_vi": "Câu hỏi thứ nhất trước khi viết: đơn vị tri thức nào là cốt lõi và đơn vị nào chỉ là ví dụ minh hoạ?",
+      "topics": [
+        "tổng hợp",
+        "kiểm chứng"
+      ],
+      "evidence": [
+        {
+          "pid": "P000006",
+          "quote": "Đơn vị tri thức nào là cốt lõi, đơn vị nào chỉ là ví dụ?"
+        }
+      ],
+      "numbers": [],
+      "terms": [],
+      "relations": [],
+      "attribution": "author",
+      "state": "active",
+      "merged_into": null,
+      "section_id": "S02",
+      "omitted_reason": null
+    },
+    {
+      "id": "U-0004",
+      "segment_id": "SEG-001",
+      "local_id": "u4",
+      "type": "qa",
+      "importance": "core",
+      "title_vi": "Câu hỏi thứ hai: dữ kiện có đúng nguồn",
+      "statement_vi": "Câu hỏi thứ hai: số liệu, ngày tháng và tên riêng có xuất hiện đúng như nguồn hay không, và có bị làm tròn?",
+      "topics": [
+        "tổng hợp",
+        "kiểm chứng"
+      ],
+      "evidence": [
+        {
+          "pid": "P000007",
+          "quote": "Số liệu, ngày tháng và tên riêng có xuất hiện đúng như nguồn không?"
+        }
+      ],
+      "numbers": [],
+      "terms": [],
+      "relations": [],
+      "attribution": "author",
+      "state": "active",
+      "merged_into": null,
+      "section_id": "S02",
+      "omitted_reason": null
+    },
+    {
+      "id": "U-0005",
+      "segment_id": "SEG-001",
+      "local_id": "u5",
+      "type": "qa",
+      "importance": "core",
+      "title_vi": "Câu hỏi thứ ba: đâu là ý tác giả",
+      "statement_vi": "Câu hỏi thứ ba: câu nào là ý của tác giả và câu nào là phần diễn giải do hệ thống tự thêm vào?",
+      "topics": [
+        "tổng hợp",
+        "kiểm chứng"
+      ],
+      "evidence": [
+        {
+          "pid": "P000008",
+          "quote": "Câu nào là ý của tác giả, câu nào là diễn giải của hệ thống?"
+        }
+      ],
+      "numbers": [],
+      "terms": [],
+      "relations": [],
+      "attribution": "author",
+      "state": "active",
+      "merged_into": null,
+      "section_id": "S02",
+      "omitted_reason": null
+    },
+    {
+      "id": "U-0006",
+      "segment_id": "SEG-001",
+      "local_id": "u6",
+      "type": "fact_data",
+      "importance": "core",
+      "title_vi": "Bốn mức đầu ra theo tỷ lệ độ dài",
+      "statement_vi": "Tài liệu nêu bốn mức đầu ra kèm tỷ lệ độ dài: dịch đầy đủ khoảng 100% nguồn, tổng hợp chi tiết khoảng 35%, báo cáo chuyên sâu khoảng 12%, tóm lược điều hành khoảng 3%; mức đầu tiên dùng khi cần đọc từng ý, mức cuối chỉ giữ ý trung tâm.",
+      "topics": [
+        "tổng hợp",
+        "kiểm chứng"
+      ],
+      "evidence": [
+        {
+          "pid": "P000010",
+          "quote": "| Mức | Mục tiêu độ dài | Khi nào dùng |\n| Dịch đầy đủ | ~100% nguồn | Cần đọc từng ý |\n| Tổng hợp chi tiết | ~35% nguồn | Muốn nắm gần hết ý |\n| Báo cáo chuyên sâu | ~12% nguồn | Hiểu hệ thống ý tưởng |\n| Tóm lược điều hành | ~3% nguồn | Chỉ cần ý trung tâm |"
+        }
+      ],
+      "numbers": [
+        "100%",
+        "35%",
+        "12%",
+        "3%"
+      ],
+      "terms": [],
+      "relations": [],
+      "attribution": "author",
+      "state": "active",
+      "merged_into": null,
+      "section_id": "S03",
+      "omitted_reason": null
+    },
+    {
+      "id": "U-0007",
+      "segment_id": "SEG-001",
+      "local_id": "u7",
+      "type": "procedure",
+      "importance": "supporting",
+      "title_vi": "Kiểm tra pid bằng code",
+      "statement_vi": "Tài liệu gợi ý kiểm tra bằng code: mọi pid đầu vào phải xuất hiện đúng một lần ở đầu ra, không bị lặp lại.",
+      "topics": [
+        "tổng hợp",
+        "kiểm chứng"
+      ],
+      "evidence": [
+        {
+          "pid": "P000012",
+          "quote": "# Ví dụ: mọi pid đầu vào phải xuất hiện đúng một lần ở đầu ra\nassert sorted(in_pids) == sorted(out_pids)"
+        }
+      ],
+      "numbers": [],
+      "terms": [
+        "pid"
+      ],
+      "relations": [],
+      "attribution": "author",
+      "state": "active",
+      "merged_into": null,
+      "section_id": "S04",
+      "omitted_reason": null
+    },
+    {
+      "id": "U-0008",
+      "segment_id": "SEG-001",
+      "local_id": "u8",
+      "type": "fact_data",
+      "importance": "core",
+      "title_vi": "Ba nhóm kiểm tra tất định",
+      "statement_vi": "Ba nhóm kiểm tra tất định thường dùng gồm: trích đoạn bằng chứng phải có thật trong nguồn, con số phải tìm thấy trong nguồn, và thuật ngữ phải khớp bảng đã duyệt.",
+      "topics": [
+        "tổng hợp",
+        "kiểm chứng"
+      ],
+      "evidence": [
+        {
+          "pid": "P000013",
+          "quote": "Ba nhóm kiểm tra tất định thường dùng:"
+        }
+      ],
+      "numbers": [],
+      "terms": [],
+      "relations": [],
+      "attribution": "author",
+      "state": "active",
+      "merged_into": null,
+      "section_id": "S04",
+      "omitted_reason": null
+    },
+    {
+      "id": "U-0009",
+      "segment_id": "SEG-001",
+      "local_id": "u9",
+      "type": "procedure",
+      "importance": "minor",
+      "title_vi": "Nhóm kiểm tra trích đoạn",
+      "statement_vi": "Nhóm thứ nhất: mọi trích đoạn bằng chứng trong báo cáo phải có thật trong nguồn, không được diễn giải lại.",
+      "topics": [
+        "kiểm chứng"
+      ],
+      "evidence": [
+        {
+          "pid": "P000014",
+          "quote": "trích đoạn bằng chứng phải có thật trong nguồn;"
+        }
+      ],
+      "numbers": [],
+      "terms": [],
+      "relations": [],
+      "attribution": "author",
+      "state": "omitted",
+      "merged_into": null,
+      "section_id": null,
+      "omitted_reason": "level_policy"
+    },
+    {
+      "id": "U-0010",
+      "segment_id": "SEG-001",
+      "local_id": "u10",
+      "type": "procedure",
+      "importance": "minor",
+      "title_vi": "Nhóm kiểm tra con số",
+      "statement_vi": "Nhóm thứ hai: mọi con số trong báo cáo phải tìm thấy trong nguồn, kể cả số phần trăm và ngày tháng.",
+      "topics": [
+        "kiểm chứng"
+      ],
+      "evidence": [
+        {
+          "pid": "P000015",
+          "quote": "con số trong báo cáo phải tìm thấy trong nguồn;"
+        }
+      ],
+      "numbers": [],
+      "terms": [],
+      "relations": [],
+      "attribution": "author",
+      "state": "omitted",
+      "merged_into": null,
+      "section_id": null,
+      "omitted_reason": "level_policy"
+    },
+    {
+      "id": "U-0011",
+      "segment_id": "SEG-001",
+      "local_id": "u11",
+      "type": "procedure",
+      "importance": "minor",
+      "title_vi": "Nhóm kiểm tra thuật ngữ",
+      "statement_vi": "Nhóm thứ ba: thuật ngữ trong báo cáo phải khớp bảng thuật ngữ đã duyệt, không dùng biến thể bị cấm.",
+      "topics": [
+        "kiểm chứng"
+      ],
+      "evidence": [
+        {
+          "pid": "P000016",
+          "quote": "thuật ngữ phải khớp bảng thuật ngữ đã duyệt."
+        }
+      ],
+      "numbers": [],
+      "terms": [],
+      "relations": [],
+      "attribution": "author",
+      "state": "omitted",
+      "merged_into": null,
+      "section_id": null,
+      "omitted_reason": "level_policy"
+    },
+    {
+      "id": "U-0012",
+      "segment_id": "SEG-001",
+      "local_id": "u12",
+      "type": "argument",
+      "importance": "core",
+      "title_vi": "Nguyên tắc kết luận",
+      "statement_vi": "Kết luận của tài liệu: giữ nguyên số liệu, không thêm kiến thức ngoài nguồn, và đánh cờ khi không chắc thay vì tự đoán.",
+      "topics": [
+        "tổng hợp",
+        "kiểm chứng"
+      ],
+      "evidence": [
+        {
+          "pid": "P000017",
+          "quote": "Kết luận: giữ nguyên số liệu, không thêm kiến thức ngoài nguồn, và luôn có đường thoát\nan toàn khi không chắc (đánh cờ thay vì đoán)."
+        }
+      ],
+      "numbers": [],
+      "terms": [],
+      "relations": [],
+      "attribution": "author",
+      "state": "active",
+      "merged_into": null,
+      "section_id": "S04",
+      "omitted_reason": null
+    }
+  ],
+  "blocks_full": [
+    {
+      "block_id": "S01.b01",
+      "section_id": "S01",
+      "type": "paragraph",
+      "markdown_vi": "Tài liệu này là ghi chú bài giảng do nhóm ViSynth tự viết để thử quy trình tổng hợp, không trích từ nguồn có bản quyền và cũng không nhằm dùng làm dẫn chứng học thuật cho bất kỳ kết luận nào.",
+      "cites": [
+        "U-0001"
+      ],
+      "verdict": "supported",
+      "issues": [],
+      "flagged": false,
+      "removed": false,
+      "check": {
+        "issues": [],
+        "cites_ok": true,
+        "unverified_numbers": [],
+        "diacritic_ratio": 0.257,
+        "length_ratio": 1.024
+      }
+    },
+    {
+      "block_id": "S01.b02",
+      "section_id": "S01",
+      "type": "paragraph",
+      "markdown_vi": "Một bài giảng 90 phút thường lặp lại phần giới thiệu, phần nhắc lại, ví dụ và hỏi đáp, nên dịch nguyên văn buộc người đọc tự lọc bỏ; báo cáo tổng hợp giữ ý cốt lõi kèm trích dẫn nguồn.",
+      "cites": [
+        "U-0002"
+      ],
+      "verdict": "supported",
+      "issues": [],
+      "flagged": false,
+      "removed": false,
+      "check": {
+        "issues": [],
+        "cites_ok": true,
+        "unverified_numbers": [],
+        "diacritic_ratio": 0.321,
+        "length_ratio": 1.0
+      }
+    },
+    {
+      "block_id": "S02.b01",
+      "section_id": "S02",
+      "type": "paragraph",
+      "markdown_vi": "Câu hỏi thứ nhất trước khi viết: đơn vị tri thức nào là cốt lõi và đơn vị nào chỉ là ví dụ minh hoạ?",
+      "cites": [
+        "U-0003"
+      ],
+      "verdict": "supported",
+      "issues": [],
+      "flagged": false,
+      "removed": false,
+      "check": {
+        "issues": [],
+        "cites_ok": true,
+        "unverified_numbers": [],
+        "diacritic_ratio": 0.338,
+        "length_ratio": 1.042
+      }
+    },
+    {
+      "block_id": "S02.b02",
+      "section_id": "S02",
+      "type": "paragraph",
+      "markdown_vi": "Câu hỏi thứ hai: số liệu, ngày tháng và tên riêng có xuất hiện đúng như nguồn hay không, và có bị làm tròn?",
+      "cites": [
+        "U-0004"
+      ],
+      "verdict": "supported",
+      "issues": [],
+      "flagged": false,
+      "removed": false,
+      "check": {
+        "issues": [],
+        "cites_ok": true,
+        "unverified_numbers": [],
+        "diacritic_ratio": 0.287,
+        "length_ratio": 1.0
+      }
+    },
+    {
+      "block_id": "S02.b03",
+      "section_id": "S02",
+      "type": "paragraph",
+      "markdown_vi": "Câu hỏi thứ ba: câu nào là ý của tác giả và câu nào là phần diễn giải do hệ thống tự thêm vào?",
+      "cites": [
+        "U-0005"
+      ],
+      "verdict": "supported",
+      "issues": [],
+      "flagged": false,
+      "removed": false,
+      "check": {
+        "issues": [],
+        "cites_ok": true,
+        "unverified_numbers": [],
+        "diacritic_ratio": 0.319,
+        "length_ratio": 1.0
+      }
+    },
+    {
+      "block_id": "S03.b01",
+      "section_id": "S03",
+      "type": "paragraph",
+      "markdown_vi": "Tài liệu nêu bốn mức đầu ra kèm tỷ lệ độ dài: dịch đầy đủ khoảng 100% nguồn, tổng hợp chi tiết khoảng 35%, báo cáo chuyên sâu khoảng 12%, tóm lược điều hành khoảng 3%; mức đầu tiên dùng khi cần đọc từng ý, mức cuối chỉ giữ ý trung tâm.",
+      "cites": [
+        "U-0006"
+      ],
+      "verdict": "supported",
+      "issues": [],
+      "flagged": false,
+      "removed": false,
+      "check": {
+        "issues": [],
+        "cites_ok": true,
+        "unverified_numbers": [],
+        "diacritic_ratio": 0.315,
+        "length_ratio": 1.02
+      }
+    },
+    {
+      "block_id": "S04.b01",
+      "section_id": "S04",
+      "type": "paragraph",
+      "markdown_vi": "Tài liệu gợi ý kiểm tra bằng code: mọi pid đầu vào phải xuất hiện đúng một lần ở đầu ra, không bị lặp lại.",
+      "cites": [
+        "U-0007"
+      ],
+      "verdict": "supported",
+      "issues": [],
+      "flagged": false,
+      "removed": false,
+      "check": {
+        "issues": [],
+        "cites_ok": true,
+        "unverified_numbers": [],
+        "diacritic_ratio": 0.304,
+        "length_ratio": 0.926
+      }
+    },
+    {
+      "block_id": "S04.b02",
+      "section_id": "S04",
+      "type": "paragraph",
+      "markdown_vi": "Ba nhóm kiểm tra tất định thường dùng gồm: trích đoạn bằng chứng phải có thật trong nguồn, con số phải tìm thấy trong nguồn, và thuật ngữ phải khớp bảng đã duyệt.",
+      "cites": [
+        "U-0008"
+      ],
+      "verdict": "supported",
+      "issues": [],
+      "flagged": false,
+      "removed": false,
+      "check": {
+        "issues": [],
+        "cites_ok": true,
+        "unverified_numbers": [],
+        "diacritic_ratio": 0.254,
+        "length_ratio": 1.222
+      }
+    },
+    {
+      "block_id": "S04.b03",
+      "section_id": "S04",
+      "type": "paragraph",
+      "markdown_vi": "Kết luận của tài liệu: giữ nguyên số liệu, không thêm kiến thức ngoài nguồn, và đánh cờ khi không chắc thay vì tự đoán.",
+      "cites": [
+        "U-0012"
+      ],
+      "verdict": "supported",
+      "issues": [],
+      "flagged": false,
+      "removed": false,
+      "check": {
+        "issues": [],
+        "cites_ok": true,
+        "unverified_numbers": [],
+        "diacritic_ratio": 0.275,
+        "length_ratio": 0.926
+      }
+    }
+  ],
+  "coverage": {
+    "U-0006": "yes",
+    "U-0001": "yes",
+    "U-0002": "yes",
+    "U-0003": "yes",
+    "U-0004": "yes",
+    "U-0005": "yes",
+    "U-0008": "yes",
+    "U-0012": "yes"
+  },
+  "glossary": [
+    {
+      "source_term": "pid",
+      "target_term": "pid",
+      "keep_original": true,
+      "case_sensitive": false,
+      "forbidden_variants": [],
+      "confidence": 0.9,
+      "occurrences": 3,
+      "first_pid": "P000012",
+      "origin": "suggested",
+      "status": "suggested"
+    },
+    {
+      "source_term": "pipeline",
+      "target_term": "quy trình",
+      "keep_original": false,
+      "case_sensitive": false,
+      "forbidden_variants": [],
+      "confidence": 0.9,
+      "occurrences": 1,
+      "first_pid": "P000002",
+      "origin": "suggested",
+      "status": "suggested"
+    }
+  ],
+  "profile": {
+    "language_code": "vi",
+    "language_confidence": 0.721,
+    "doc_type": "notes",
+    "domain": "Kỹ thuật phần mềm — quy trình tổng hợp tài liệu",
+    "domain_tags": [
+      "tổng hợp tài liệu",
+      "kiểm chứng",
+      "quy trình"
+    ],
+    "title_guess": "demo_lecture",
+    "authors_or_speakers": [
+      "Nhóm ViSynth"
+    ],
+    "register": "formal",
+    "attribution_mode": "neutral_facts",
+    "structure": {
+      "has_toc": false,
+      "has_headings": true,
+      "has_speaker_turns": false,
+      "has_timecodes": false,
+      "has_footnotes": false,
+      "has_tables": true
+    },
+    "content_risks": [
+      "tables",
+      "code",
+      "many_numbers"
+    ],
+    "recommended_segmentation": {
+      "strategy": "by_headings",
+      "target_tokens": 8000
+    },
+    "glossary_hint": "Giữ nguyên 'pid'; các thuật ngữ tiếng Anh khác dùng từ tiếng Việt ngắn.",
+    "notes_vi": "Tài liệu mẫu ngắn: có bảng, danh sách và một khối code."
+  },
+  "markdown": "# Ghi chú bài giảng: tổng hợp và kiểm chứng\n*Tài liệu mẫu cho M0 — bản tổng hợp có trích dẫn nguồn*\n\n> **Báo cáo do AI tổng hợp.** Hãy kiểm tra lại ở nguồn gốc trước khi dùng cho quyết định quan trọng. Đây là bản tổng hợp/đọc hiểu, không phải bản dịch nguyên văn.\n\n**Nguồn:** demo_lecture · **Mức:** deep_synthesis · **Hạng chất lượng:** A\n\n## Mục lục\n- Tóm tắt điều hành\n- Ba câu hỏi trước khi viết báo cáo\n- Các mức đầu ra theo tỷ lệ độ dài\n- Kiểm tra tất định và nguyên tắc kết luận\n\n## Tóm tắt điều hành\n\nTài liệu này là ghi chú bài giảng do nhóm ViSynth tự viết để thử quy trình tổng hợp, không trích từ nguồn có bản quyền và cũng không nhằm dùng làm dẫn chứng học thuật cho bất kỳ kết luận nào.\n\n<sub>Nguồn: [1]</sub>\n\nMột bài giảng 90 phút thường lặp lại phần giới thiệu, phần nhắc lại, ví dụ và hỏi đáp, nên dịch nguyên văn buộc người đọc tự lọc bỏ; báo cáo tổng hợp giữ ý cốt lõi kèm trích dẫn nguồn.\n\n<sub>Nguồn: [2]</sub>\n\n## Ba câu hỏi trước khi viết báo cáo\n\nCâu hỏi thứ nhất trước khi viết: đơn vị tri thức nào là cốt lõi và đơn vị nào chỉ là ví dụ minh hoạ?\n\n<sub>Nguồn: [3]</sub>\n\nCâu hỏi thứ hai: số liệu, ngày tháng và tên riêng có xuất hiện đúng như nguồn hay không, và có bị làm tròn?\n\n<sub>Nguồn: [4]</sub>\n\nCâu hỏi thứ ba: câu nào là ý của tác giả và câu nào là phần diễn giải do hệ thống tự thêm vào?\n\n<sub>Nguồn: [5]</sub>\n\n## Các mức đầu ra theo tỷ lệ độ dài\n\nTài liệu nêu bốn mức đầu ra kèm tỷ lệ độ dài: dịch đầy đủ khoảng 100% nguồn, tổng hợp chi tiết khoảng 35%, báo cáo chuyên sâu khoảng 12%, tóm lược điều hành khoảng 3%; mức đầu tiên dùng khi cần đọc từng ý, mức cuối chỉ giữ ý trung tâm.\n\n<sub>Nguồn: [6]</sub>\n\n## Kiểm tra tất định và nguyên tắc kết luận\n\nTài liệu gợi ý kiểm tra bằng code: mọi pid đầu vào phải xuất hiện đúng một lần ở đầu ra, không bị lặp lại.\n\n<sub>Nguồn: [7]</sub>\n\nBa nhóm kiểm tra tất định thường dùng gồm: trích đoạn bằng chứng phải có thật trong nguồn, con số phải tìm thấy trong nguồn, và thuật ngữ phải khớp bảng đã duyệt.\n\n<sub>Nguồn: [8]</sub>\n\nKết luận của tài liệu: giữ nguyên số liệu, không thêm kiến thức ngoài nguồn, và đánh cờ khi không chắc thay vì tự đoán.\n\n<sub>Nguồn: [9]</sub>\n\n## Bảng dữ kiện\n\n| Dữ kiện | Giá trị | Nguồn |\n|---|---|---|\n| Bốn mức đầu ra theo tỷ lệ độ dài | 100%, 35%, 12%, 3% | P000010 |\n| Ba nhóm kiểm tra tất định | — | P000013 |\n\n## Phụ lục thuật ngữ\n\n| Thuật ngữ nguồn | Cách dùng trong báo cáo | Số lần |\n|---|---|---|\n| pid | pid | 1 |\n| pipeline | quy trình | 1 |\n\n## Phạm vi & cách xử lý\n\nĐây là báo cáo tổng hợp và phân tích tài liệu mẫu, KHÔNG phải bản dịch nguyên văn từng câu.\n\n**Được giữ đầy đủ:** các ý cốt lõi về lý do tổng hợp thay vì dịch thô, ba câu hỏi phải trả lời, các mức đầu ra và các nhóm kiểm tra tất định.\n\n**Được cô đọng hoặc lược bớt:** các ví dụ minh hoạ và phần lặp lại đã được rút gọn; mọi con số và thuật ngữ giữ nguyên theo nguồn.\n\n**Lưu ý về độ tin cậy:** báo cáo do AI tạo, đã qua kiểm tra tất định và bước kiểm chứng. Thống kê lượt gọi: {\"coverage_core\":1.0,\"faithfulness_rate\":1.0,\"unresolved_blocks\":0,\"blocks_total\":9,\"blocks_removed\":0,\"units_total\":12,\"units_core\":8,\"units_unverified\":0,\"grade\":\"A\",\"source_words\":315,\"report_words\":0,\"units_supporting\":1,\"units_minor\":3,\"units_merged\":0,\"units_omitted\":3,\"omitted_by_reason\":{\"level_policy\":3},\"sections\":4,\"blocks_flagged\":0,\"paragraph_labels\":{\"core\":13,\"admin\":1,\"qa\":3},\"llm_calls\":13,\"llm_tokens_in\":18812,\"llm_tokens_out\":3174} Hãy đối chiếu đoạn nguồn được trích dẫn trước khi dùng cho quyết định quan trọng.\n\n## Nguồn trích dẫn\n\n1. **P000002** — Tài liệu này do nhóm ViSynth tự viết để thử pipeline; không phải trích từ nguồn có bản quyền.\n2. **P000004** — Một bài giảng 90 phút thường chứa rất nhiều phần lặp lại: giới thiệu, nhắc lại, ví dụ, hỏi đáp. Nếu dịch nguyên văn, người đọc phải tự bỏ qua những phần đó. Báo cáo tổng hợp giữ l…\n3. **P000006** — Đơn vị tri thức nào là cốt lõi, đơn vị nào chỉ là ví dụ?\n4. **P000007** — Số liệu, ngày tháng và tên riêng có xuất hiện đúng như nguồn không?\n5. **P000008** — Câu nào là ý của tác giả, câu nào là diễn giải của hệ thống?\n6. **P000010** — | Mức | Mục tiêu độ dài | Khi nào dùng | | Dịch đầy đủ | ~100% nguồn | Cần đọc từng ý | | Tổng hợp chi tiết | ~35% nguồn | Muốn nắm gần hết ý | | Báo cáo chuyên sâu | ~12% nguồn |…\n7. **P000012** — # Ví dụ: mọi pid đầu vào phải xuất hiện đúng một lần ở đầu ra assert sorted(in_pids) == sorted(out_pids)\n8. **P000013** — Ba nhóm kiểm tra tất định thường dùng:\n9. **P000017** — Kết luận: giữ nguyên số liệu, không thêm kiến thức ngoài nguồn, và luôn có đường thoát an toàn khi không chắc (đánh cờ thay vì đoán).\n",
+  "llm_calls": null,
+  "source": {
+    "path": null,
+    "words": 315,
+    "title": "demo_lecture"
+  },
+  "params": {
+    "level": "deep_synthesis",
+    "seed": 7,
+    "demo": true,
+    "tamper": null
+  },
+  "artifacts": "eval/runs/demo"
+}

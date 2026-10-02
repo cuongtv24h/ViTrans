@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visynth.local/eval/golden.schema.json",
+  "title": "Metadata một tài liệu golden (SPEC §16.1)",
+  "description": "Mỗi tài liệu golden là một thư mục eval/golden/<doc_id>/ chứa meta.json này (và tuỳ chọn reference.md). Người làm xác lập danh sách 'phải phủ' và 'trap facts'; bộ chấm đọc đúng các trường ở đây.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["doc_id", "title", "kind", "level", "source_path", "must_cover", "trap_facts"],
+  "properties": {
+    "doc_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]{2,}$",
+      "description": "Khớp tên thư mục, chỉ chữ thường/số/gạch."
+    },
+    "title": {"type": "string", "minLength": 3},
+    "kind": {
+      "enum": [
+        "lecture_transcript",
+        "book_chapter",
+        "article",
+        "pdf_scan",
+        "messy_docx",
+        "vietnamese_source",
+        "smoke"
+      ],
+      "description": "Loại tài liệu theo bảng §16.1. `smoke` chỉ dùng cho ví dụ chạy thử, không tính vào 24 tài liệu."
+    },
+    "level": {
+      "enum": ["full_translation", "detailed_synthesis", "deep_synthesis", "executive_brief"],
+      "description": "Mức chạy khi chấm (thường là deep_synthesis)."
+    },
+    "source_path": {
+      "type": "string",
+      "minLength": 3,
+      "description": "Đường dẫn tệp nguồn, tính TƯƠNG ĐỐI từ tệp meta.json (ví dụ '../../fixtures/demo_lecture.txt')."
+    },
+    "target_words": {
+      "type": "integer",
+      "minimum": 40,
+      "maximum": 20000,
+      "description": "Ngân sách độ dài kỳ vọng của báo cáo (từ `report_budget_words` cho tài liệu thật)."
+    },
+    "demo": {
+      "type": "boolean",
+      "default": false,
+      "description": "true = ví dụ chạy thử trong repo, không thuộc bộ 24 tài liệu §16.1."
+    },
+    "must_cover": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 80,
+      "description": "Danh sách 'phải phủ'. Tài liệu thật: 30-60 mục, phần lớn là core.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["concept"],
+        "properties": {
+          "concept": {"type": "string", "minLength": 2},
+          "variants": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 2},
+            "description": "Các cách viết khác được coi là cùng khái niệm (đồng nghĩa, viết tắt, dạng dịch khác)."
+          },
+          "core": {"type": "boolean", "default": true, "description": "false = chỉ theo dõi, không tính vào coverage_core."},
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "trap_facts": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Số/ngày/tên để bắt lỗi số liệu. Tài liệu thật: ≥ 10 mục.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fact", "kind"],
+        "properties": {
+          "fact": {"type": "string", "minLength": 1, "description": "Chuỗi đúng như trong nguồn và phải xuất hiện trong báo cáo."},
+          "kind": {"enum": ["number", "date", "name"]},
+          "accept": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Các dạng viết tương đương được chấp nhận thay cho `fact`."
+          },
+          "wrong_variants": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Dạng sai (làm tròn, nhầm đơn vị, nhầm số) — thấy trong báo cáo là tính lỗi."
+          },
+          "note": {"type": "string"}
+        }
+      }
+    },
+    "glossary": {
+      "type": "array",
+      "description": "Bảng thuật ngữ của tài liệu, dùng để chấm nhất quán thuật ngữ (§2.2).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_term", "target_term"],
+        "properties": {
+          "source_term": {"type": "string", "minLength": 1},
+          "target_term": {"type": "string", "minLength": 1},
+          "keep_original": {"type": "boolean", "default": false},
+          "case_sensitive": {"type": "boolean", "default": false},
+          "forbidden_variants": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "reference_path": {
+      "type": "string",
+      "description": "Bản tham chiếu (báo cáo Gemini Notebook hoặc bản người biên tập), tương đối từ meta.json. §16.1: ≥ 5 tài liệu có."
+    },
+    "reference_author": {"type": "string", "description": "Ai làm bản tham chiếu (người biên tập / công cụ)."},
+    "human_scores": {
+      "type": "object",
+      "description": "Điểm người chấm 1-5 (§16.2) khi đã có; bộ chấm chỉ đọc để báo cáo, không tự tính.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {"type": "number", "minimum": 1, "maximum": 5}
+      }
+    },
+    "notes": {"type": "string"}
+  }
+}

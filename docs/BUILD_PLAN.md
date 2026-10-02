@@ -68,7 +68,7 @@ Chuyển từ bộ spec sang kho sản phẩm — **không viết lại từ đ�
 
 ### M0 — Prototype CLI (2–3 tuần) — **cổng quyết định rẻ nhất**
 
-**Trạng thái: W3 xong phần mã + kiểm chứng offline; còn `probe` thật (cần mạng tới nhà cung cấp)** (mã trong `apps/worker/visynth/`, test trong `tests/`, CI ở `.github/workflows/ci.yml`).
+**Trạng thái: W3 xong phần mã + kiểm chứng offline (còn `probe` thật); W4 đang chạy — hạ tầng đo đã xong** (mã trong `apps/worker/visynth/`, test trong `tests/`, CI ở `.github/workflows/ci.yml`).
 W3 đã có: **LLM Pool thật** (`visynth/pool/`: `model`/`state`/`router` port nguyên ngữ nghĩa từ
 `docs/reference/llm_pool.py`, `secrets` + `registry` cho kho khoá mã hoá NGOÀI repo, `policy_io` port
 `declare`, `adapters` HTTP thật cho `gemini_native` và `openai_compat`, `client` = `PooledLLMClient` với
@@ -87,7 +87,7 @@ registry `referencing` cho `$ref` chéo tệp), kiểm tra tất định D1–D9
 `checks/{quotes,numbers,glossary,merge}.py`, khối `level_policy` khớp từng ký tự §7.3 (`levelpolicy.py`),
 kịch bản giả E2E kèm 5 biến thể phá hoại để thử P7 (`visynth/eval/demo.py`), lệnh `visynth run --demo
 [--tamper …]`. Kết quả trên tài liệu demo 315 từ: 12 đơn vị tri thức (8 cốt lõi), 4 mục, 9 khối, hạng A,
-`coverage_core = 1.0`, 14 lời gọi LLM, không cảnh báo; **217 test** (trong đó 22 test pipeline E2E, 38 test
+`coverage_core = 1.0`, 14 lời gọi LLM, không cảnh báo; **229 test** (trong đó 22 test pipeline E2E, 38 test
 pool — gồm 4 test đối chiếu router/loader/secrets/`classify_http` với `docs/reference/` — và 26 test HTTP
 `tests/test_pool_http.py` chốt định dạng request/ánh xạ lỗi qua máy chủ giả cục bộ).
 W1 đã có: khung monorepo + CI; hợp đồng LLM client (`LLMClient`, `LLMRequest/Response`, `classify_http` port
@@ -105,9 +105,9 @@ Mục tiêu: chứng minh chất lượng và chi phí trên dữ liệu thật 
 | Tuần | Việc | Kết quả |
 |---|---|---|
 | W1 ✅ | Skeleton monorepo; CI (ruff, pytest, openapi, validator spec); `FakeLLMClient`; hợp đồng LLM client; extract TXT + DOCX; `segment`; ước tính chi phí | CLI `extract` + `segment` + `estimate` chạy trên tài liệu mẫu; CI xanh; còn thiếu: quét giấy phép tự động (thêm trước M1) |
-| W2 ✅ | `glossary` (P1, cổng duyệt theo quy tắc); `map`/`consolidate`/`write`/`verify`/`repair` (P2–P7); kiểm tra tất định D1–D9 (§6.13); render prompt theo §8.2; `assemble` (P8) | Pipeline P0–P8 chạy trọn trên `FakeLLMClient` (139 test lúc đó; cả bộ hiện **217 test** xanh, schema kiểm tra mọi giai đoạn, 4 biến thể phá hoại đi qua P7); **báo cáo từ LLM thật chuyển sang W3** (cần pool) |
+| W2 ✅ | `glossary` (P1, cổng duyệt theo quy tắc); `map`/`consolidate`/`write`/`verify`/`repair` (P2–P7); kiểm tra tất định D1–D9 (§6.13); render prompt theo §8.2; `assemble` (P8) | Pipeline P0–P8 chạy trọn trên `FakeLLMClient` (139 test lúc đó; cả bộ hiện **229 test** xanh, schema kiểm tra mọi giai đoạn, 4 biến thể phá hoại đi qua P7); **báo cáo từ LLM thật chuyển sang W3** (cần pool) |
 | W3 🟡 (mã xong, chờ mạng) | Pool: nạp `pool_config` thật; `declare` + dry-run + `risk_ack`; `pool models`; `probe`; đo `limits`/`tokenizer_factor`; `defer_task`, cooldown, circuit | Đã kiểm chứng offline: định dạng request/ánh xạ lỗi của hai adapter qua máy chủ giả (`tests/test_pool_http.py`, 26 test), `llm_calls` không chứa khoá, ca Google 400 = lỗi khoá. **Còn lại (chặn bởi mạng):** sandbox phát triển không ra được tới nhà cung cấp → chủ hệ thống chạy ở máy mình: `pool models` → sửa id → `pool probe --out eval/runs/probe.json` → nhập `limits`/`quality`/`tokenizer_factor` → `run --pool-config …` để có báo cáo thật đầu tiên |
-| W4 | Golden subset (≥ 5 tài liệu, rút từ §16.1); chấm điểm §2.2; bake-off 2–3 cấu hình model; hiệu chỉnh hằng số chi phí; khởi tạo Lõi văn phong + glossary lĩnh vực đầu (§19.9) và so với lõi trung tính | Báo cáo đánh giá trong `eval/`; quyết định **đi tiếp / chỉnh hướng**; `pool_config` thật đã hiệu chỉnh |
+| W4 🟡 (1/4) | **Đã xong hạ tầng đo:** `eval/score.py` chấm `run.json` theo §16.2/§2.2 (coverage_core, faithfulness, trap facts, thuật ngữ, độ dài, chi phí; kết luận ĐẠT/KHÔNG + JSON làm baseline), định dạng golden `eval/golden/schema.json` + `--validate-golden` đếm độ phủ §16.1, thang người `eval/rubric.md`, `visynth run --artifacts`, ví dụ đầu-cuối `eval/runs/demo/`, 12 test. **Còn lại:** (2) tài liệu thật ≥ 5 + bản tham chiếu; (3) bake-off 2–3 cấu hình model + hiệu chỉnh hằng số chi phí; (4) Lõi văn phong + glossary lĩnh vực đầu (§19.9) và so với lõi trung tính | Báo cáo đánh giá trong `eval/`; quyết định **đi tiếp / chỉnh hướng**; `pool_config` thật đã hiệu chỉnh |
 
 Ba việc dời có chủ ý: (a) P9 `full_translation`, P10 OCR, P11, P12/P13 (Lõi văn phong) thuộc M1 như bảng dưới;
 (b) PDF vẫn để sau (đúng dòng W1); (c) phạm vi giả ở W2 chỉ có 3 mức văn bản

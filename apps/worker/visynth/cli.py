@@ -190,10 +190,34 @@ def cmd_run(args: argparse.Namespace) -> int:
             {"block_id": b.block_id, "cites": b.cites, "verdict": b.verdict, "flagged": b.flagged, "removed": b.removed}
             for b in result.blocks
         ],
+        "units": [u.as_dict() for u in result.units],
+        "blocks_full": [{**b.as_dict(), "check": result.checks.get(b.block_id, {})} for b in result.blocks],
+        "coverage": result.coverage,
+        "glossary": result.glossary,
+        "profile": result.profile,
         "markdown": result.markdown,
         "llm_calls": ledger.totals() if ledger else None,
+        "source": {
+            "path": args.path,
+            "words": result.stats.get("source_words"),
+            "title": result.title,
+        },
+        "params": {
+            "level": result.level,
+            "seed": args.seed,
+            "demo": bool(args.demo or not args.path),
+            "tamper": getattr(args, "tamper", None),
+        },
     }
+    if args.artifacts:
+        out_dir = Path(args.artifacts)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        payload["artifacts"] = str(out_dir)
+        (out_dir / "run.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        (out_dir / "report.md").write_text(result.markdown + "\n", encoding="utf-8")
     human = result.summary() + client_note
+    if args.artifacts:
+        human += f"\nĐã ghi bộ tệp cho bộ chấm điểm: {args.artifacts}/run.json, {args.artifacts}/report.md"
     if args.out:
         human += f"\n\nĐã ghi báo cáo Markdown: {args.out}"
     else:
@@ -447,6 +471,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-metered", action="store_true", help="không dùng deployment trả phí")
     p.add_argument("--json", action="store_true")
     p.add_argument("--out", help="ghi báo cáo Markdown ra tệp")
+    p.add_argument(
+        "--artifacts",
+        help="ghi bộ tệp cho bộ chấm điểm vào thư mục này: run.json (đủ đơn vị/khối/coverage) + report.md",
+    )
     p.set_defaults(func=cmd_run)
 
     pool = sub.add_parser("pool", help="LLM Pool thật (SPEC §17): khoá, khai báo, kiểm định, mô phỏng")

@@ -1,0 +1,36 @@
+{
+  "doc_id": "demo_lecture",
+  "title": "Ghi chú bài giảng (tài liệu mẫu cho M0)",
+  "kind": "smoke",
+  "level": "deep_synthesis",
+  "source_path": "../../fixtures/demo_lecture.txt",
+  "target_words": 900,
+  "demo": true,
+  "must_cover": [
+    {"concept": "báo cáo tổng hợp", "variants": ["tổng hợp", "bản tổng hợp"]},
+    {"concept": "đơn vị tri thức", "variants": ["đơn vị tri thức nào là cốt lõi"]},
+    {"concept": "trích dẫn nguồn", "variants": ["trích dẫn"]},
+    {"concept": "số liệu", "variants": ["con số"]},
+    {"concept": "thuật ngữ", "variants": ["bảng thuật ngữ", "bảng đã duyệt"]},
+    {"concept": "kiểm tra tất định", "variants": ["kiểm tra bằng code", "nhóm kiểm tra"]},
+    {"concept": "đường thoát an toàn", "variants": ["đường thoát an toàn khi không chắc", "đánh cờ thay vì đoán"]},
+    {"concept": "bốn mức đầu ra", "variants": ["các mức đầu ra", "bốn mức"]},
+    {"concept": "hỏi đáp", "variants": []},
+    {"concept": "ý của tác giả", "variants": ["ý của tác giả và câu nào"]},
+    {"concept": "tên riêng", "variants": []},
+    {"concept": "bản quyền", "variants": ["không trích từ nguồn có bản quyền"]}
+  ],
+  "trap_facts": [
+    {"fact": "90 phút", "kind": "number", "accept": ["90 phút"], "wrong_variants": ["95 phút", "60 phút"]},
+    {"fact": "100% nguồn", "kind": "number", "accept": ["100%"], "wrong_variants": ["90% nguồn"]},
+    {"fact": "35%", "kind": "number", "accept": ["35% nguồn"], "wrong_variants": ["30%", "50%"]},
+    {"fact": "12%", "kind": "number", "accept": ["12% nguồn"], "wrong_variants": ["10% nguồn", "15%"]},
+    {"fact": "3%", "kind": "number", "accept": ["3% nguồn"], "wrong_variants": ["5% nguồn", "10% nguồn"]}
+  ],
+  "glossary": [
+    {"source_term": "knowledge unit", "target_term": "đơn vị tri thức", "forbidden_variants": ["đơn vị kiến thức"]},
+    {"source_term": "evidence", "target_term": "trích đoạn bằng chứng", "forbidden_variants": ["bằng chứng thô"]},
+    {"source_term": "deep_synthesis", "target_term": "báo cáo chuyên sâu", "forbidden_variants": ["tổng hợp sâu"]}
+  ],
+  "notes": "Ví dụ chạy thử (không thuộc 24 tài liệu §16.1): dùng để kiểm tra bộ chấm chạy được đầu-cuối với `visynth run --demo --artifacts`."
+}

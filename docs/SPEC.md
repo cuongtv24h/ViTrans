@@ -1521,6 +1521,8 @@ Mỗi tài liệu đi kèm: **danh sách "phải phủ"** (30-60 khái niệm c�
 
 **Người chấm (1-5, hai người, lệch ≥ 2 thì thảo luận):** Đầy đủ · Chính xác · Văn phong tiếng Việt · Cấu trúc · Hữu ích.
 
+Bộ chấm tự động của M0 nằm ở `eval/score.py` (chấm `run.json` do `visynth run --artifacts` ghi ra, chạy offline, không tốn token); thang người chấm và hằng số chặn hồi quy ở `eval/rubric.md`; định dạng tài liệu golden ở `eval/golden/schema.json`.
+
 ### 16.3 Kiểm thử hồi quy khi đổi prompt, model hoặc cấu hình
 
 Chạy tập con 6 tài liệu và **chặn phát hành** khi đổi prompt, model, cấu hình pool (thêm/bỏ deployment, đổi `needs.min_quality`, đổi thứ tự tầng) hoặc phiên bản Lõi văn phong, nếu: `coverage_core` giảm > 0.03, `faithfulness_rate` giảm > 0.02, có lỗi trap fact, chi phí tăng > 20%, hoặc p95 thời gian tăng > 30% so với baseline.
@@ -3042,10 +3044,4 @@ Output ONLY JSON that matches the provided schema.
 
 ## Phụ lục E. Kết quả kiểm tra tại thời điểm phát hành
 
-| Kiểm tra | Kết quả |
-|---|---|
-| `pytest tests` (so khớp trích đoạn, lint thuật ngữ, số liệu, ước tính chi phí, wire schema, render prompt, **LLM Pool**, **khai báo và mã hoá khoá**, **Lõi văn phong**, structured output) | ĐẠT: 184 passed in 1.44s |
-| `validate_spec.py` (schema, ví dụ, kiểm tra phủ định, chéo ví dụ, prompt, OpenAPI, enum chéo DDL/schema/OpenAPI, cấu hình pool, lõi mẫu) | ĐẠT: 130 kiểm tra |
-| DDL | Chỉ parse cú pháp (chưa chạy trên PostgreSQL thật) |
-
-Chạy ngày 2026-10-02, Python 3.11.2. Kiểm tra lại bằng lệnh ở §0. Các bài kiểm tra này chứng minh **logic và ngữ nghĩa** của spec; chúng KHÔNG chứng minh chất lượng đầu ra của LLM thật hay hạn mức thật của nhà cung cấp (xem §17.9, §21).
+_Chạy `python tools/build_spec.py --run-checks` để điền._
