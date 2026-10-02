@@ -124,6 +124,7 @@
   - [19.7 Biên dịch vào prompt](#197-biên-dịch-vào-prompt)
   - [19.8 Vai trò và quyền](#198-vai-trò-và-quyền)
   - [19.9 Khởi tạo lõi cho lĩnh vực đầu tiên (Giai đoạn 0)](#199-khởi-tạo-lõi-cho-lĩnh-vực-đầu-tiên-giai-đoạn-0)
+  - [19.9b Công cụ bản M0](#199b-công-cụ-bản-m0)
   - [19.10 Đã kiểm thử gì](#1910-đã-kiểm-thử-gì)
 - [20. Triển khai trên một VPS cá nhân ở nước ngoài](#20-triển-khai-trên-một-vps-cá-nhân-ở-nước-ngoài)
   - [20.1 Quyết định và hệ quả](#201-quyết-định-và-hệ-quả)
@@ -2157,6 +2158,15 @@ Không cần biết trước nội dung văn phong; quy trình tự sinh ra nó:
 6. Duyệt `1.0.0` và phát hành glossary `v1`.
 7. Chạy golden set (§16) với lõi mới **và** với lõi trung tính. **Lõi phải kiếm được chỗ của nó**: nếu không tốt hơn lõi trung tính ở điểm "Văn phong" mà không làm hỏng chỉ số khác thì đừng dùng.
 8. Về sau, mỗi khi gom đủ phản hồi (cờ đoạn, nhận xét), chạy P12 chế độ `refine` để có phiên bản mới.
+
+### 19.9b Công cụ bản M0
+
+`visynth style {init,lint,compile,show,decide,approve,bump,deprecate,status,compare}` giữ ĐÚNG quy tắc §19.3
+trên một kho JSON ngoài repo (M0 chưa có PostgreSQL): bản `approved` bất biến, chỉ tăng phiên bản mới khi sửa;
+`approve` bị chặn khi còn quyết định mở, còn quy tắc/ví dụ `origin = ai` mà `reviewed = false`, hoặc lint có lỗi;
+job chỉ biên dịch được từ phiên bản **đã duyệt** (`visynth run --style-core <id>[@version]`), và job ghi lại
+`content_sha256` để tái lập. `style compare` là `test-drive` bước 5/7 (chạy lõi trung tính và lõi ứng viên trên
+cùng tài liệu rồi so chỉ số đo được, nhắc rằng điểm "Văn phong" phải do người chấm).
 
 ### 19.10 Đã kiểm thử gì
 

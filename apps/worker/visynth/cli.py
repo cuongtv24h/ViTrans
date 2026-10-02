@@ -143,7 +143,17 @@ def cmd_run(args: argparse.Namespace) -> int:
     from visynth.pipeline.models import JobOptions
     from visynth.pipeline.run import run_document
 
-    options = JobOptions(level=args.level)
+    style_text = ""
+    if getattr(args, "style_core", None):
+        from visynth.stylecore import StyleCoreError, StyleCoreStore
+
+        store = StyleCoreStore.load(args.store) if args.store else StyleCoreStore.load()
+        try:
+            style_text = store.compile(args.style_core, "write")
+        except StyleCoreError as exc:
+            print(f"LỖI: {exc}", file=sys.stderr)
+            return 1
+    options = JobOptions(level=args.level, style_core_text=style_text)
     started = time.monotonic()
     client_note = ""
     ledger = None
@@ -434,6 +444,231 @@ def _load_declaration(path: Path) -> dict:
     return json.loads(text)
 
 
+def _store(args: argparse.Namespace):
+    from visynth.stylecore import StyleCoreStore
+
+    return StyleCoreStore.load(args.store) if args.store else StyleCoreStore.load()
+
+
+def _core_content(args: argparse.Namespace) -> dict:
+    return json.loads(Path(args.core).read_text(encoding="utf-8"))
+
+
+def cmd_style_lint(args: argparse.Namespace) -> int:
+    """Lint nội dung lõi (tệp JSON) — không cần kho."""
+    from visynth.stylecore import lint
+
+    problems = lint(_core_content(args))
+    if args.json:
+        _dump([p.__dict__ for p in problems], as_json=True, out=None, human="")
+        return 0
+    if not problems:
+        print("Lint sạch: không có vấn đề nào.")
+        return 0
+    for p in problems:
+        print(f"  {p.severity}: {p.path} — {p.message}")
+    errors = [p for p in problems if p.severity == "error"]
+    print(f"Tổng: {len(errors)} lỗi, {len(problems) - len(errors)} cảnh báo.")
+    return 1 if errors else 0
+
+
+def cmd_style_compile(args: argparse.Namespace) -> int:
+    """Biên dịch nội dung lõi thành khối `{{style_core}}` cho một giai đoạn."""
+    from visynth.stylecore import compile_style_core
+
+    text = compile_style_core(_core_content(args), args.stage, args.max_chars)
+    if args.json:
+        _dump({"stage": args.stage, "chars": len(text), "text": text}, as_json=True, out=None, human="")
+    else:
+        print(text)
+    return 0
+
+
+def cmd_style_init(args: argparse.Namespace) -> int:
+    """Tạo lõi mới trong kho từ lõi TRUNG TÍNH (không đặt quan điểm sẵn) — điểm bắt đầu §19.9 bước 1."""
+    import copy
+
+    from visynth.prompts import default_prompts_dir
+
+    store = _store(args)
+    neutral_path = default_prompts_dir() / "00_style_core_neutral.json"
+    content = copy.deepcopy(json.loads(neutral_path.read_text(encoding="utf-8")))
+    content["name_vi"] = args.name_vi
+    content["domain"] = args.domain
+    content["summary_vi"] = args.summary or ""
+    if args.parent:
+        parent = store.snapshot(args.parent)
+        if parent["status"] != "approved":
+            print(f"LỖI: lõi cha {args.parent} chưa được duyệt ({parent['status']}).", file=sys.stderr)
+            return 1
+        content["parent_id"] = parent["core_id"]
+    store.create(args.core_id, content, parent_id=args.parent, by=args.by, version=args.version)
+    store.save()
+    print(f"Đã tạo lõi '{args.core_id}' phiên bản {args.version} (draft) trong {store.path}")
+    print("Bước tiếp: thêm quy tắc/ví dụ (người hoặc P12), `style decide` trả lời quyết định mở, `style approve`.")
+    return 0
+
+
+def cmd_style_status(args: argparse.Namespace) -> int:
+    store = _store(args)
+    rows = store.status_rows()
+    if args.json:
+        _dump(rows, as_json=True, out=None, human="")
+        return 0
+    if not rows:
+        print(f"Kho trống: {store.path}")
+        return 0
+    print(f"Kho: {store.path}")
+    for r in rows:
+        parent = f" (cha {r['parent_id']})" if r["parent_id"] else ""
+        print(
+            f"  {r['core_id']}@{r['version']} [{r['status']}]{parent} — {r['rules']} quy tắc, {r['exemplars']} ví dụ, "
+            f"{r['open_decisions']} quyết định mở, sha {r['sha']}"
+            + (f", duyệt bởi {r['approved_by']}" if r["approved_by"] else "")
+        )
+    return 0
+
+
+def cmd_style_show(args: argparse.Namespace) -> int:
+    store = _store(args)
+    found = store.find(args.version_id)
+    if found is None:
+        print(f"LỖI: không tìm thấy lõi '{args.version_id}' trong {store.path}", file=sys.stderr)
+        return 1
+    core, v = found
+    payload = {
+        "core_id": core["id"],
+        **{k: v[k] for k in ("version", "status", "content_sha256", "open_decisions", "answers")},
+        "content": v["content"],
+    }
+    if args.json:
+        _dump(payload, as_json=True, out=None, human="")
+        return 0
+    print(f"{core['id']}@{v['version']} — {v['status']}, sha {v['content_sha256'][:12]}")
+    if v["open_decisions"]:
+        print("Quyết định mở:")
+        for d in v["open_decisions"]:
+            mark = "✔" if d["id"] in v["answers"] else "…"
+            print(f"  {mark} {d['id']}: {d.get('question', '')} → {v['answers'].get(d['id'], '(chưa trả lời)')}")
+    print(json.dumps(v["content"], ensure_ascii=False, indent=2))
+    return 0
+
+
+def cmd_style_decide(args: argparse.Namespace) -> int:
+    """Trả lời một quyết định mở của P12 (§19.4)."""
+    store = _store(args)
+    core_id, _, version = args.version_id.partition("@")
+    decision_id, _, answer = args.answer.partition("=")
+    store.answer(core_id, decision_id, answer, version=version or None, by=args.by)
+    store.save()
+    print(f"Đã ghi {decision_id} = {answer!r} cho {args.version_id}.")
+    return 0
+
+
+def cmd_style_approve(args: argparse.Namespace) -> int:
+    """Duyệt một phiên bản — bị chặn nếu còn quyết định mở / quy tắc AI chưa xem / lint có lỗi (§19.3)."""
+    from visynth.stylecore import ApprovalBlocked, StyleCoreError
+
+    store = _store(args)
+    core_id, _, version = args.version_id.partition("@")
+    try:
+        v = store.approve(core_id, by=args.by, version=version or None)
+    except ApprovalBlocked as exc:
+        print("KHÔNG duyệt được — còn vướng:", file=sys.stderr)
+        for problem in exc.problems:
+            print(f"  - {problem}", file=sys.stderr)
+        return 1
+    except StyleCoreError as exc:
+        print(f"LỖI: {exc}", file=sys.stderr)
+        return 1
+    store.save()
+    print(f"Đã duyệt {core_id}@{v['version']} bởi {v['approved_by']} (sha {v['content_sha256'][:12]}).")
+    print("Phiên bản đã duyệt là BẤT BIẾN: muốn sửa thì `style bump` rồi duyệt bản mới.")
+    return 0
+
+
+def cmd_style_bump(args: argparse.Namespace) -> int:
+    store = _store(args)
+    core_id, _, version = args.version_id.partition("@")
+    v = store.bump(core_id, args.kind, by=args.by)
+    store.save()
+    print(f"Đã tạo bản nháp {core_id}@{v['version']} từ bản trước ({args.kind}).")
+    return 0
+
+
+def cmd_style_deprecate(args: argparse.Namespace) -> int:
+    from visynth.stylecore import StyleCoreError
+
+    store = _store(args)
+    core_id, _, version = args.version_id.partition("@")
+    try:
+        v = store.deprecate(core_id, by=args.by, version=version or None, reason=args.reason or "")
+    except StyleCoreError as exc:
+        print(f"LỖI: {exc}", file=sys.stderr)
+        return 1
+    store.save()
+    print(f"Đã ngừng dùng {core_id}@{v['version']}.")
+    return 0
+
+
+def cmd_style_compare(args: argparse.Namespace) -> int:
+    """Test-drive §19.9 bước 5/7: chạy cùng tài liệu với lõi trung tính và lõi ứng viên, so chỉ số.
+
+    Chỉ số chất lượng văn phong là việc của người chấm (§16.2) — ở đây so phần ĐO ĐƯỢC và cảnh báo nếu lõi
+    không chứng minh được lợi ích (mọi chỉ số ngang nhau) để tránh dùng lõi chỉ vì đã viết ra.
+    """
+    from visynth.eval import demo_client, demo_extraction
+    from visynth.pipeline.models import JobOptions
+    from visynth.pipeline.run import run_document
+    from visynth.prompts import neutral_style_core
+
+    store = _store(args)
+    candidate = store.compile(args.version_id, "write")
+
+    def _run(style_text: str | None):
+        if args.pool_config:
+            from visynth.pool.client import Ledger, PooledLLMClient
+
+            cfg = json.loads(Path(args.pool_config).read_text(encoding="utf-8"))
+            client = PooledLLMClient.from_config(
+                cfg, ledger=Ledger(Path(args.ledger) if args.ledger else None), gate=args.gate
+            )
+            ext = extract(args.path)
+        else:
+            ext = demo_extraction()
+            client = demo_client(ext, level=args.level)
+        options = JobOptions(level=args.level, style_core_text=style_text or neutral_style_core("write"))
+        return run_document(ext, client, options, seed=args.seed)
+
+    neutral, with_core = _run(None), _run(candidate)
+    keys = ("coverage_core", "faithfulness_rate", "unresolved_blocks")
+    rows = []
+    for key in keys:
+        a, b = neutral.metrics.get(key), with_core.metrics.get(key)
+        rows.append((key, a, b, (b - a) if (isinstance(a, (int, float)) and isinstance(b, (int, float))) else None))
+    payload = {
+        "core": args.version_id,
+        "level": args.level,
+        "compiled_chars": len(candidate),
+        "metrics": [{"metric": k, "neutral": a, "with_core": b, "delta": d} for k, a, b, d in rows],
+        "grade": {"neutral": neutral.grade, "with_core": with_core.grade},
+        "verdict": (
+            "chưa chứng minh được lợi ích (chỉ số đo được không đổi) — cần chấm người ở hạng mục Văn phong"
+            if all(d == 0 for _, _, _, d in rows if d is not None)
+            else "có khác biệt ở chỉ số đo được — chấm người trước khi kết luận"
+        ),
+    }
+    human = (
+        f"So lõi trung tính với {args.version_id} trên {args.path or 'kịch bản giả'} (mức {args.level}):\n"
+        + "\n".join(f"  {k}: {a} → {b}" + (f" ({d:+.3f})" if d is not None else "") for k, a, b, d in rows)
+        + f"\n  khối biên dịch: {len(candidate)} ký tự"
+        + f"\nKết luận: {payload['verdict']}"
+        + "\nNhắc §19.9 bước 7: lõi chỉ được dùng nếu THẮNG lõi trung tính ở điểm Văn phong mà không làm hỏng chỉ số khác."
+    )
+    _dump(payload, as_json=args.json, out=args.out, human=human)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="visynth", description="ViSynth — prototype CLI (M0)")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -479,6 +714,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--region-restricted", action="store_true", help="người dùng ở EEA/CH/UK: tránh nhóm gắn cờ no_eea_uk_ch"
     )
     p.add_argument("--no-metered", action="store_true", help="không dùng deployment trả phí")
+    p.add_argument("--style-core", help="dùng Lõi văn phong ĐÃ DUYỆT (core_id[@version]) thay lõi trung tính")
+    p.add_argument("--store", help="tệp kho lõi (mặc định ~/.local/state/visynth/style_cores.json)")
     p.add_argument("--json", action="store_true")
     p.add_argument("--out", help="ghi báo cáo Markdown ra tệp")
     p.add_argument(
@@ -486,6 +723,68 @@ def build_parser() -> argparse.ArgumentParser:
         help="ghi bộ tệp cho bộ chấm điểm vào thư mục này: run.json (đủ đơn vị/khối/coverage) + report.md",
     )
     p.set_defaults(func=cmd_run)
+
+    style = sub.add_parser("style", help="Lõi văn phong (SPEC §19): lint, biên dịch, vòng đời duyệt")
+    ss = style.add_subparsers(dest="style_cmd", required=True)
+
+    q = ss.add_parser("lint", help="lint một tệp nội dung lõi (không cần kho)")
+    q.add_argument("--core", required=True)
+    q.add_argument("--json", action="store_true")
+    q.set_defaults(func=cmd_style_lint)
+
+    q = ss.add_parser("compile", help="biên dịch nội dung lõi thành khối {{style_core}} cho một giai đoạn")
+    q.add_argument("--core", required=True)
+    q.add_argument(
+        "--stage",
+        choices=["glossary", "map", "consolidate", "write", "translate", "repair", "assemble"],
+        default="write",
+    )
+    q.add_argument("--max-chars", type=int)
+    q.add_argument("--json", action="store_true")
+    q.set_defaults(func=cmd_style_compile)
+
+    for name, func, helptext in (
+        ("init", cmd_style_init, "tạo lõi mới (draft) từ lõi trung tính — bắt đầu §19.9"),
+        ("status", cmd_style_status, "liệt kê lõi và phiên bản trong kho"),
+        ("show", cmd_style_show, "xem nội dung, quyết định mở và câu trả lời"),
+        ("decide", cmd_style_decide, "trả lời một quyết định mở của P12"),
+        ("approve", cmd_style_approve, "duyệt một phiên bản (bị chặn nếu chưa đủ điều kiện)"),
+        ("bump", cmd_style_bump, "tạo bản nháp mới từ phiên bản trước (patch|minor|major)"),
+        ("deprecate", cmd_style_deprecate, "ngừng dùng một phiên bản đã duyệt"),
+    ):
+        q = ss.add_parser(name, help=helptext)
+        q.add_argument("--store", help="tệp kho lõi (mặc định ~/.local/state/visynth/style_cores.json)")
+        q.add_argument("--json", action="store_true")
+        if name == "init":
+            q.add_argument("--id", dest="core_id", required=True)
+            q.add_argument("--name-vi", required=True)
+            q.add_argument("--domain", required=True)
+            q.add_argument("--summary")
+            q.add_argument("--parent", help="lõi cha (phải đã duyệt)")
+            q.add_argument("--version", default="0.1.0")
+            q.add_argument("--by")
+        elif name in ("show", "decide", "approve", "bump", "deprecate"):
+            q.add_argument("version_id", help="core_id hoặc core_id@version")
+            q.add_argument("--by")
+        if name == "decide":
+            q.add_argument("--answer", required=True, help="dạng d1=trả lời")
+        if name == "bump":
+            q.add_argument("--kind", choices=["patch", "minor", "major"], default="patch")
+        if name == "deprecate":
+            q.add_argument("--reason")
+        q.set_defaults(func=func)
+    q = ss.add_parser("compare", help="test-drive §19.9: lõi trung tính vs lõi ứng viên trên cùng tài liệu")
+    q.add_argument("version_id")
+    q.add_argument("--path", help="tài liệu để chạy (bỏ trống = kịch bản giả)")
+    q.add_argument("--pool-config", help="chạy LLM thật bằng pool_config này")
+    q.add_argument("--ledger")
+    q.add_argument("--gate", choices=["dev", "A", "B", "C"], default="dev")
+    q.add_argument("--level", choices=list(LEVELS), default="deep_synthesis")
+    q.add_argument("--seed", type=int, default=7)
+    q.add_argument("--store")
+    q.add_argument("--json", action="store_true")
+    q.add_argument("--out")
+    q.set_defaults(func=cmd_style_compare)
 
     pool = sub.add_parser("pool", help="LLM Pool thật (SPEC §17): khoá, khai báo, kiểm định, mô phỏng")
     ps = pool.add_subparsers(dest="pool_cmd", required=True)

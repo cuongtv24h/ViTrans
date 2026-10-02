@@ -10,10 +10,12 @@
   sổ `llm_calls`; **217 test**, trong đó 26 test chốt định dạng HTTP của hai adapter qua máy chủ giả cục bộ).
   Việc còn lại của W3 cần **mạng tới nhà cung cấp** (sandbox phát triển không ra được Internet): chạy
   `pool models` → sửa id model → `pool probe` để đo hạn mức/`tokenizer_factor` → báo cáo `deep_synthesis` đầu tiên.
-- **M0 — W4 đang chạy (3/4):** hạ tầng đo trong `eval/` — bộ chấm tự động `eval/score.py` (§2.2/§16.2, chạy offline),
+- **M0 — W4 (4/4 phần mã):** hạ tầng đo trong `eval/` — `eval/score.py` (§2.2/§16.2, chạy offline),
   `eval/compare_baseline.py` chặn hồi quy §16.3, `eval/bakeoff.py` chọn cấu hình rẻ nhất đạt ngưỡng §16.4,
-  định dạng golden `eval/golden/schema.json`, thang chấm người `eval/rubric.md`; còn thiếu **tài liệu thật**,
-  bake-off thật và Lõi văn phong lĩnh vực đầu (§19.9). Xem [`eval/README.md`](eval/README.md).
+  định dạng golden `eval/golden/schema.json`, thang chấm người `eval/rubric.md`; **Lõi văn phong** §19
+  (`visynth style …`: lint, biên dịch, vòng đời duyệt, `compare` test-drive).
+  Còn thiếu **tài liệu thật**, **bake-off thật**, **nội dung lĩnh vực đầu tiên** (§19.9 cần 3–10 tài liệu mẫu
+  + 5–20 cặp dịch tham chiếu do bạn duyệt). Xem [`eval/README.md`](eval/README.md).
 
 ## Cấu trúc kho
 
@@ -82,6 +84,23 @@ Khoá nằm ở một trong hai nơi, `pool_config` chỉ giữ `secret_ref` (`e
 `visynth pool keygen` sinh khoá chủ (một lần cho mỗi máy) để dùng kho mã hoá thay vì `.env`.
 Mọi lời gọi được ghi vào `~/.local/state/visynth/llm_calls.jsonl` (deployment, tầng, `data_policy`, outcome,
 token, độ trễ — **không** có nội dung tài liệu, không có khoá).
+
+## Lõi văn phong (SPEC §19)
+
+Spec không đặt sẵn văn phong: nội dung do AI đề xuất và **bạn duyệt**, lưu thành dữ liệu có phiên bản. Kho lõi
+nằm ngoài repo (`~/.local/state/visynth/style_cores.json`):
+
+```bash
+visynth style init --id bai-giang --name-vi "Lõi bài giảng" --domain education   # bản nháp từ lõi TRUNG TÍNH
+visynth style lint   --core docs/prompts/00_style_core_neutral.json               # lỗi/cảnh báo, không cần kho
+visynth style compile --core <tệp.json> --stage write                            # khối {{style_core}} để dán vào prompt
+visynth style decide  bai-giang --answer d1="chọn cách A" --by ban               # trả lời quyết định mở của P12
+visynth style approve bai-giang --by ban                                         # BỊ CHẶN nếu còn quyết định mở / quy tắc AI chưa xem / lint lỗi
+visynth style bump    bai-giang --kind minor --by ban                            # bản đã duyệt là bất biến → sửa bằng bản mới
+visynth style status                                                             # mọi lõi và phiên bản
+visynth style compare bai-giang --path <tài liệu>                                # test-drive: lõi trung tính vs lõi này (§19.9 b.7)
+visynth run <tài liệu> --pool-config pool_config.json --style-core bai-giang      # job chỉ dùng được bản ĐÃ DUYỆT
+```
 
 ## Kiểm tra
 
