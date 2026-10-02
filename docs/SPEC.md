@@ -172,7 +172,7 @@ docs/
 ├── api/                                      # Đặc tả API
 │   └── openapi.yaml                          # OpenAPI 3.1
 ├── db/                                       # PostgreSQL DDL + hàm nghiệp vụ
-│   └── schema.sql                            # 46 bảng, view, hàm: tín dụng, hàng đợi, LLM Pool (đặt chỗ nguyên tử), Lõi văn phong, phát hành glossary
+│   └── schema.sql                            # 47 bảng, view, hàm: tín dụng, hàng đợi, LLM Pool (đặt chỗ nguyên tử), Lõi văn phong, phát hành glossary
 ├── examples/                                 # Ví dụ khớp từng schema, cùng kể một câu chuyện trên tài liệu giả lập
 │   ├── coverage.example.json
 │   ├── doc_profile.example.json
@@ -1006,7 +1006,7 @@ Mọi đầu ra có cấu trúc của LLM và các đối tượng trao đổi g
 
 ## 10. Mô hình dữ liệu
 
-Toàn bộ DDL: `db/schema.sql` (46 bảng; PostgreSQL ≥ 16, **không cần extension**, đã nạp và kiểm thử hành vi trên PostgreSQL thật).
+Toàn bộ DDL: `db/schema.sql` (47 bảng; PostgreSQL ≥ 16, **không cần extension**, đã nạp và kiểm thử hành vi trên PostgreSQL thật).
 
 ### 10.1 Quan hệ chính
 

@@ -139,6 +139,12 @@ visynth worker --once --fake                                  # chạy khô (dev
 # 4) Luồng người dùng: đăng ký (mã mời hoặc VISYNTH_OPEN_SIGNUP=1) → tải tài liệu → POST /jobs → SSE
 ```
 
+Worker chạy **mỗi task một giai đoạn** và lưu điểm lưu vào `job_checkpoints`, nên worker chết giữa chừng thì task được
+thu hồi và chỉ chạy lại đúng giai đoạn đó. Tài liệu từ **2000 từ** trở lên sẽ dừng ở `awaiting_glossary`:
+`GET /jobs/{id}/glossary` để xem gợi ý, `POST /jobs/{id}/glossary/confirm` để chốt (quá 15 phút thì hệ thống tự
+xác nhận các mục có `confidence ≥ 0.7`). Bật/tắt mức ngay trong `app_settings.enabled_levels` — `POST /jobs`
+trả `level_disabled` nếu mức đang tắt.
+
 Test trên PostgreSQL thật (không cần cài PostgreSQL: dùng `pgserver`, hoặc trỏ `VISYNTH_TEST_DSN` vào CSDL thử):
 
 ```bash

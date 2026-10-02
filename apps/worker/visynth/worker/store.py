@@ -52,6 +52,11 @@ ALL_STAGES = (
 )
 
 
+def _half(credits: int) -> int:
+    """Một nửa tín dụng, làm tròn LÊN để người dùng không bị thiệt (§12.6)."""
+    return (int(credits) + 1) // 2
+
+
 class WorkerStore:
     """Kết nối CSDL của worker (một pool nhỏ, giao dịch ngắn)."""
 
@@ -116,6 +121,148 @@ class WorkerStore:
                     )
                 self._event(cur, job["id"], "job_queued", data={"level": job["level"]})
             return jobs
+
+    # ------------------------------------------------------------- điểm lưu theo giai đoạn
+    def save_checkpoint(self, job_id: str, stage: str, state: dict) -> None:
+        """Lưu trạng thái pipeline sau một giai đoạn để chạy tiếp mà không chạy lại."""
+        self.tx_execute(
+            """INSERT INTO job_checkpoints (job_id, stage, state) VALUES (%s, %s, %s)
+               ON CONFLICT (job_id, stage) DO UPDATE SET state = EXCLUDED.state, updated_at = now()""",
+            (job_id, stage, to_jsonb(state)),
+        )
+
+    def load_checkpoint(self, job_id: str, stage: str) -> dict | None:
+        row = self.one("SELECT state FROM job_checkpoints WHERE job_id = %s AND stage = %s", (job_id, stage))
+        return dict(row["state"]) if row and row["state"] else None
+
+    def latest_checkpoint_before(self, job_id: str, stage: str) -> tuple[str | None, dict | None]:
+        """Điểm lưu gần nhất TRƯỚC giai đoạn `stage` (dùng khi task bị chạy lại)."""
+        row = self.one(
+            """SELECT stage, state FROM job_checkpoints
+                WHERE job_id = %s AND array_position(%s::text[], stage) < array_position(%s::text[], %s::text)
+                ORDER BY array_position(%s::text[], stage) DESC LIMIT 1""",
+            (job_id, list(STAGE_SEQUENCE), list(STAGE_SEQUENCE), stage, list(STAGE_SEQUENCE)),
+        )
+        return (row["stage"], dict(row["state"])) if row else (None, None)
+
+    # ------------------------------------------------------------- cổng duyệt glossary
+    def save_job_glossary(self, job_id: str, entries: list[dict], *, status: str) -> int:
+        """Ghi glossary của job: `pending` (gợi ý P1 chờ duyệt) hoặc `confirmed` (đã chốt)."""
+        if status not in ("pending", "confirmed"):
+            raise ValueError("status phải là pending hoặc confirmed")
+        written = 0
+        with self.tx() as cur:
+            for entry in entries:
+                cur.execute(
+                    """INSERT INTO job_glossary_entries (job_id, source_term, target_term, keep_original,
+                            case_sensitive, forbidden_variants, term_type, note, origin, status, confidence)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (job_id, lower(source_term)) DO UPDATE SET
+                            target_term = CASE WHEN job_glossary_entries.status = 'confirmed'
+                                               THEN job_glossary_entries.target_term ELSE EXCLUDED.target_term END,
+                            keep_original = EXCLUDED.keep_original,
+                            case_sensitive = EXCLUDED.case_sensitive,
+                            forbidden_variants = EXCLUDED.forbidden_variants,
+                            term_type = EXCLUDED.term_type,
+                            note = COALESCE(job_glossary_entries.note, EXCLUDED.note),
+                            origin = CASE WHEN job_glossary_entries.status = 'confirmed'
+                                          THEN job_glossary_entries.origin ELSE EXCLUDED.origin END,
+                            confidence = EXCLUDED.confidence""",
+                    (
+                        job_id,
+                        entry["source_term"],
+                        entry["target_term"],
+                        bool(entry.get("keep_original")),
+                        bool(entry.get("case_sensitive")),
+                        list(entry.get("forbidden_variants") or []),
+                        entry.get("term_type") or "concept",
+                        entry.get("note"),
+                        entry.get("origin") or "suggested",
+                        entry.get("status") or ("confirmed" if status == "confirmed" else "suggested"),
+                        entry.get("confidence"),
+                    ),
+                )
+                written += cur.rowcount
+        return written
+
+    def open_glossary_gate(self, job_id: str, *, candidates: int, minutes: float) -> None:
+        """Dừng job ở `awaiting_glossary` cho người dùng duyệt (SPEC §6.4); hết hạn thì tự xác nhận."""
+        with self.tx() as cur:
+            cur.execute(
+                "UPDATE jobs SET status = 'awaiting_glossary', glossary_review_deadline = "
+                "now() + make_interval(mins => %s::int) WHERE id = %s",
+                (int(round(minutes)), job_id),
+            )
+            self._event(
+                cur,
+                job_id,
+                "awaiting_glossary",
+                message_vi="Cần bạn duyệt thuật ngữ trước khi viết báo cáo",
+                data={"candidates": candidates, "minutes": int(round(minutes))},
+                progress=self.progress(job_id),
+            )
+
+    def load_shared_glossary(self, glossary_ids: list[str]) -> list[dict]:
+        """Ảnh chụp bản phát hành mới nhất của các glossary người dùng chọn (`glossary_ids`)."""
+        if not glossary_ids:
+            return []
+        rows = self.all(
+            """SELECT DISTINCT ON (r.glossary_id) r.entries, g.scope
+                 FROM glossary_releases r JOIN glossaries g ON g.id = r.glossary_id
+                WHERE r.glossary_id = ANY(%s::uuid[])
+                ORDER BY r.glossary_id, r.version DESC""",
+            ([str(g) for g in glossary_ids],),
+        )
+        out: list[dict] = []
+        for row in rows:
+            for entry in row["entries"] or []:
+                if entry.get("status") not in (None, "confirmed"):
+                    continue
+                out.append(
+                    {**entry, "origin": "personal" if row["scope"] == "personal" else "shared", "status": "confirmed"}
+                )
+        return out
+
+    def load_job_glossary(self, job_id: str) -> list[dict]:
+        """Các mục của job đã được chốt (hoặc người dùng sửa) để pipeline dùng làm ràng buộc cứng."""
+        return self.all(
+            """SELECT source_term, target_term, keep_original, case_sensitive, forbidden_variants,
+                      term_type, note, origin, status, confidence
+                 FROM job_glossary_entries WHERE job_id = %s AND status = 'confirmed'
+                 ORDER BY priority DESC, lower(source_term)""",
+            (job_id,),
+        )
+
+    def sweep_glossary_gates(self) -> int:
+        """Cổng quá hạn 15 phút: tự xác nhận mục `confidence >= 0.7`, loại phần còn lại (AC-04)."""
+        with self.tx() as cur:
+            cur.execute(
+                """SELECT id, COALESCE((options ->> 'auto_confirm_min_confidence')::real, 0.7) AS min_confidence
+                     FROM jobs WHERE status = 'awaiting_glossary' AND glossary_review_deadline <= now()
+                     ORDER BY glossary_review_deadline FOR UPDATE SKIP LOCKED LIMIT 50"""
+            )
+            rows = cur.fetchall()
+            for row in rows:
+                cur.execute(
+                    """UPDATE job_glossary_entries
+                          SET status = CASE WHEN coalesce(confidence, 0) >= %s THEN 'confirmed' ELSE 'rejected' END
+                        WHERE job_id = %s AND status = 'suggested'""",
+                    (row["min_confidence"], row["id"]),
+                )
+                cur.execute(
+                    """UPDATE jobs SET status = 'queued', glossary_auto_confirmed = true,
+                              glossary_review_deadline = NULL WHERE id = %s""",
+                    (row["id"],),
+                )
+                self._event(
+                    cur,
+                    row["id"],
+                    "glossary_confirmed",
+                    message_vi="Hết thời gian duyệt — hệ thống tự xác nhận thuật ngữ đủ tin cậy",
+                    data={"auto": True},
+                )
+                self._event(cur, row["id"], "job_queued", message_vi="Đã xếp hàng, chờ worker", data={"level": None})
+        return len(rows)
 
     def claim(self, *, limit: int = 1, per_job_limit: int = 1) -> list[dict]:
         """Nhận task bằng `claim_tasks` (FOR UPDATE SKIP LOCKED + advisory lock theo job)."""
@@ -321,9 +468,55 @@ class WorkerStore:
         )
 
     # ------------------------------------------------------------------ kết thúc
-    def save_report(self, job: dict, result) -> str:
-        """Ghi `reports`/`report_sections`/`report_blocks` từ `JobResult` — trả `report_id`."""
+    def save_report(self, job: dict, result, segments: list[dict] | None = None) -> str:
+        """Ghi `reports`/`report_sections`/`report_blocks` (+ `segments`, `knowledge_units`) — trả `report_id`."""
         with self.tx() as cur:
+            for row in segments or []:
+                cur.execute(
+                    """INSERT INTO segments (job_id, segment_id, idx, first_pid, last_pid, token_count, section_id, labels)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (job_id, segment_id) DO UPDATE SET
+                            idx = EXCLUDED.idx, labels = EXCLUDED.labels""",
+                    (
+                        job["id"],
+                        row["segment_id"],
+                        int(row.get("idx") or 0),
+                        row["first_pid"],
+                        row["last_pid"],
+                        int(row.get("token_count") or 1),
+                        row.get("section_id"),
+                        to_jsonb(row.get("labels") or {}),
+                    ),
+                )
+            for unit in result.units:
+                cur.execute(
+                    """INSERT INTO knowledge_units (job_id, id, segment_id, local_id, type, importance,
+                            title_vi, statement_vi, topics, terms, evidence, numbers, relations, attribution,
+                            state, merged_into, omit_reason)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (job_id, id) DO UPDATE SET
+                            importance = EXCLUDED.importance, state = EXCLUDED.state,
+                            merged_into = EXCLUDED.merged_into, omit_reason = EXCLUDED.omit_reason""",
+                    (
+                        job["id"],
+                        unit.id,
+                        unit.segment_id,
+                        unit.local_id,
+                        unit.type,
+                        unit.importance,
+                        unit.title_vi,
+                        unit.statement_vi,
+                        list(unit.topics),
+                        list(unit.terms),
+                        to_jsonb(unit.evidence),
+                        to_jsonb(unit.numbers),
+                        to_jsonb(unit.relations),
+                        unit.attribution,
+                        unit.state,
+                        unit.merged_into,
+                        unit.omitted_reason,
+                    ),
+                )
             cur.execute(
                 """INSERT INTO reports (job_id, document_id, user_id, title, level, plan, stats, scope_note_md, markdown, quality_grade)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -387,9 +580,9 @@ class WorkerStore:
                 progress={"done": len(ALL_STAGES), "total": len(ALL_STAGES), "pct": 100.0},
             )
         if result.grade == "C":
-            # Hạng C nghĩa là báo cáo có lỗi chưa sửa hết: hoàn tín dụng (SPEC §11).
+            # Hạng C nghĩa là báo cáo có lỗi chưa sửa hết: hoàn 50% số đã trừ (SPEC §12.6).
             refreshed = self.load_job(job["id"])
-            refunded = self.refund(job["id"], refreshed["charged_credits"], reason="grade_c")
+            refunded = self.refund(job["id"], _half(refreshed["charged_credits"]), reason="grade_c")
             return {"refunded_credits": refunded}
         return {"refunded_credits": 0}
 
@@ -428,12 +621,16 @@ class WorkerStore:
                 (job["id"],),
             )
             refunded = 0
-            if not charged_work and job["charged_credits"]:
-                cur.execute(
-                    "SELECT refund_credits(%s, %s, %s, %s) AS refunded",
-                    (job["user_id"], job["charged_credits"], job["id"], f"cancel:{job['id']}"),
-                )
-                refunded = cur.fetchone()["refunded"]
+            if job["charged_credits"]:
+                # Trước `map` (phần tốn kém): hoàn đủ; sau `map`: hoàn 50% (SPEC §12.6).
+                amount = _half(job["charged_credits"]) if charged_work else job["charged_credits"]
+                suffix = ":partial" if charged_work else ""
+                if amount:
+                    cur.execute(
+                        "SELECT refund_credits(%s, %s, %s, %s) AS refunded",
+                        (job["user_id"], amount, job["id"], f"cancel:{job['id']}{suffix}"),
+                    )
+                    refunded = cur.fetchone()["refunded"]
             self._event(
                 cur, job["id"], "job_canceled", data={"refunded_credits": refunded, "charged_work": charged_work}
             )

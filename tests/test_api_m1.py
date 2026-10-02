@@ -86,6 +86,37 @@ def _client_factory_ok(store: WorkerStore):
     return lambda job: demo_client(store.load_extraction(job))
 
 
+def _run_until_done(worker: JobWorker, *, max_stages: int = 12) -> list[dict]:
+    """Chạy worker tới khi job xong: mỗi lượt một giai đoạn (điểm lưu trong `job_checkpoints`)."""
+    outcomes: list[dict] = []
+    for _ in range(max_stages):
+        out = worker.run_once()
+        if not out["claimed"]:
+            break
+        outcomes.extend(out["results"])
+        if any(r.get("finished") or r.get("failed") or r.get("canceled") for r in out["results"]):
+            break
+    return outcomes
+
+
+def _grant(db, user_id: str, amount: int) -> None:
+    db.execute(
+        "INSERT INTO credit_ledger (user_id, delta, reason, idempotency_key) VALUES (%s, %s, 'admin_adjust', %s)",
+        (user_id, amount, f"test-grant:{user_id}:{amount}"),
+    )
+
+
+def _long_text(min_words: int = 2400) -> str:
+    """Tài liệu dài hơn ngưỡng cổng glossary (2000 từ) — dựng từ tài liệu mẫu."""
+    base = demo_text()
+    blocks = [base]
+    part = 1
+    while len(" ".join(blocks).split()) < min_words:
+        part += 1
+        blocks.append(f"## Phần {part}: tổng hợp và kiểm chứng\n\n" + base)
+    return "\n\n".join(blocks)
+
+
 # --------------------------------------------------------------------------- luồng chính
 
 
@@ -127,9 +158,8 @@ def test_end_to_end_job_runs_to_report(client, db):
     store = WorkerStore(db.dsn, worker_id="worker-test")
     try:
         worker = JobWorker(store, _client_factory_ok(store), limit=1)
-        outcome = worker.run_once()
-        assert outcome["claimed"] == 1
-        assert outcome["results"][0]["report_id"]
+        outcomes = _run_until_done(worker)
+        assert outcomes and outcomes[-1]["report_id"]
     finally:
         store.close()
 
@@ -236,6 +266,122 @@ def test_cancel_before_start_refunds(client, db):
     assert "event: job_canceled" in events
 
 
+# --------------------------------------------------------------------------- cổng glossary
+
+
+def test_glossary_gate_awaits_then_resumes(client, db):
+    me = _register(client)
+    _grant(db, me["user"]["id"], 100)
+    document = _upload(client, _long_text())
+    assert document["word_count"] > 2000
+    job = client.post(
+        "/api/v1/jobs",
+        json={"document_id": document["id"], "level": "deep_synthesis"},
+        headers={"Idempotency-Key": "cong-glossary-0001"},
+    ).json()["job"]
+
+    store = WorkerStore(db.dsn, worker_id="worker-cong")
+    try:
+        worker = JobWorker(store, _client_factory_ok(store), limit=1)
+        _run_until_done(worker, max_stages=3)
+
+        detail = client.get(f"/api/v1/jobs/{job['id']}").json()
+        assert detail["job"]["status"] == "awaiting_glossary"
+        assert detail["job"]["glossary_review_deadline"]
+
+        gate = client.get(f"/api/v1/jobs/{job['id']}/glossary")
+        assert gate.status_code == 200, gate.text
+        entries = gate.json()["entries"]
+        assert entries, "cổng phải có gợi ý thuật ngữ"
+        assert all(e["status"] == "suggested" for e in entries)
+
+        # Người dùng sửa một mục rồi xác nhận; các mục không nhắc tới bị loại.
+        first = entries[0]
+        confirmed = client.post(
+            f"/api/v1/jobs/{job['id']}/glossary/confirm",
+            json={
+                "entries": [
+                    {
+                        "source_term": first["source_term"],
+                        "target_term": "Bản dịch do người dùng chốt",
+                        "status": "confirmed",
+                    }
+                ]
+            },
+        )
+        assert confirmed.status_code == 202, confirmed.text
+        assert confirmed.json()["job"]["status"] == "queued"
+
+        _run_until_done(worker, max_stages=12)
+        final = client.get(f"/api/v1/jobs/{job['id']}").json()
+        assert final["job"]["status"] == "succeeded", final["job"]
+        rows = db.all(
+            "SELECT source_term, target_term, status FROM job_glossary_entries WHERE job_id = %s", (job["id"],)
+        )
+        kept = {row["source_term"]: row for row in rows}
+        assert kept[first["source_term"]]["target_term"] == "Bản dịch do người dùng chốt"
+        assert all(row["status"] in ("confirmed", "rejected") for row in rows)
+    finally:
+        store.close()
+
+
+def test_glossary_gate_auto_confirms_after_deadline(client, db):
+    me = _register(client)
+    _grant(db, me["user"]["id"], 100)
+    document = _upload(client, _long_text())
+    job = client.post(
+        "/api/v1/jobs",
+        json={"document_id": document["id"], "level": "deep_synthesis"},
+        headers={"Idempotency-Key": "cong-het-han-0001"},
+    ).json()["job"]
+
+    store = WorkerStore(db.dsn, worker_id="worker-het-han")
+    try:
+        worker = JobWorker(store, _client_factory_ok(store), limit=1)
+        _run_until_done(worker, max_stages=3)
+        assert client.get(f"/api/v1/jobs/{job['id']}").json()["job"]["status"] == "awaiting_glossary"
+
+        # Người dùng để hết hạn 15 phút (rút ngắn trong test).
+        db.execute("UPDATE jobs SET glossary_review_deadline = now() - interval '1 minute' WHERE id = %s", (job["id"],))
+        out = worker.run_once()
+        assert out["gates_auto_confirmed"] == 1
+        refreshed = client.get(f"/api/v1/jobs/{job['id']}").json()["job"]
+        assert refreshed["status"] in ("queued", "running")
+        assert refreshed["glossary_auto_confirmed"] is True
+        rows = db.all("SELECT status, confidence FROM job_glossary_entries WHERE job_id = %s", (job["id"],))
+        assert rows and all(row["status"] in ("confirmed", "rejected") for row in rows)
+        assert all(row["status"] == "confirmed" for row in rows if (row["confidence"] or 0) >= 0.7)
+
+        _run_until_done(worker, max_stages=12)
+        final = client.get(f"/api/v1/jobs/{job['id']}").json()["job"]
+        assert final["status"] == "succeeded", final
+    finally:
+        store.close()
+
+
+def test_level_disabled_blocks_new_jobs(client, db):
+    _register(client)
+    document = _upload(client, demo_text())
+    db.execute("""UPDATE app_settings SET value = '["detailed_synthesis"]'::jsonb WHERE key = 'enabled_levels'""")
+    denied = client.post(
+        "/api/v1/jobs",
+        json={"document_id": document["id"], "level": "deep_synthesis"},
+        headers={"Idempotency-Key": "muc-tat-0001"},
+    )
+    assert denied.status_code == 422, denied.text
+    assert denied.json()["code"] == "level_disabled"
+    db.execute(
+        """UPDATE app_settings SET value = '["full_translation","detailed_synthesis","deep_synthesis","executive_brief"]'::jsonb
+        WHERE key = 'enabled_levels'"""
+    )
+    ok = client.post(
+        "/api/v1/jobs",
+        json={"document_id": document["id"], "level": "deep_synthesis"},
+        headers={"Idempotency-Key": "muc-bat-lai-0001"},
+    )
+    assert ok.status_code == 202, ok.text
+
+
 # --------------------------------------------------------------------------- worker
 
 
@@ -255,10 +401,12 @@ def test_retryable_error_keeps_task_pending_then_fails_job(client, db):
     store = WorkerStore(db.dsn, worker_id="worker-loi")
     try:
         worker = JobWorker(store, lambda job: Hỏng(), limit=1)
+        # Giai đoạn `profile` có phương án dự phòng nên vẫn xong; lỗi lộ ra ở `glossary`.
+        worker.run_once()
         worker.run_once()
         task = db.one(
             "SELECT status, attempt, run_after > now() AS waiting, error_code, stage FROM job_tasks "
-            "WHERE job_id = %s ORDER BY id LIMIT 1",
+            "WHERE job_id = %s AND stage = 'glossary' ORDER BY id LIMIT 1",
             (job["id"],),
         )
         assert task["status"] == "pending", "lỗi tạm thời phải được thử lại"
@@ -267,7 +415,10 @@ def test_retryable_error_keeps_task_pending_then_fails_job(client, db):
         assert client.get(f"/api/v1/jobs/{job['id']}").json()["job"]["status"] == "running"
 
         # Hết lượt thử → job `failed` + hoàn đủ tín dụng
-        db.execute("UPDATE job_tasks SET max_attempts = 1, run_after = now() WHERE job_id = %s", (job["id"],))
+        db.execute(
+            "UPDATE job_tasks SET max_attempts = 1, run_after = now() WHERE job_id = %s AND stage = 'glossary'",
+            (job["id"],),
+        )
         db.execute("UPDATE jobs SET error_code = NULL")
         worker.run_once()
         final = client.get(f"/api/v1/jobs/{job['id']}").json()["job"]

@@ -11,9 +11,13 @@ Trình tự một lượt `run_once()`:
 5. Hết giai đoạn: `finalize` → ghi `reports`/`report_sections`/`report_blocks` → `finish_job`
    (hạng C thì hoàn tín dụng). Lỗi tạm thời: task `pending` + backoff; hết lượt: job `failed` + hoàn đủ.
 
-Ghi chú M1: pipeline giữ trạng thái trong bộ nhớ, nên khi một task được chạy lại (sau khi worker chết
-hoặc sau lỗi tạm thời) các giai đoạn chạy lại từ đầu; `job_tasks.result` ghi lại tiến độ để theo dõi và
-để M2 chuyển sang chạy lại theo giai đoạn (khôi phục `knowledge_units` đã lưu).
+Mỗi task = MỘT giai đoạn. Sau mỗi giai đoạn worker ghi `job_checkpoints.state` (ảnh chụp trạng thái
+pipeline); task chạy lại sau khi worker chết hoặc lỗi tạm thời sẽ khôi phục điểm lưu gần nhất và chỉ chạy
+tiếp giai đoạn của mình — không gọi lại LLM cho các giai đoạn đã xong.
+
+Tài liệu dài ≥ `gate_min_words` (mặc định 2000 từ) thì sau giai đoạn `glossary` job dừng ở
+`awaiting_glossary` cho người dùng duyệt (`POST /jobs/{id}/glossary/confirm`); quá `glossary_review_deadline`
+thì `sweep_glossary_gates` tự xác nhận mục `confidence >= 0.7` và cho chạy tiếp (SPEC §6.4, AC-02/AC-04).
 """
 
 from __future__ import annotations
@@ -27,7 +31,7 @@ from visynth.llm.base import RETRYABLE, LLMClient, LLMError
 from visynth.pipeline.assemble import finalize
 from visynth.pipeline.models import JobOptions
 from visynth.pipeline.stages import Pipeline
-from visynth.worker.store import STAGE_SEQUENCE, WorkerStore, to_jsonb
+from visynth.worker.store import STAGE_SEQUENCE, WorkerStore
 
 log = logging.getLogger("visynth.worker")
 
@@ -39,6 +43,8 @@ _EVENT_MAP = {
     "stage_done": "stage_completed",
     "block_removed": "warning",
     "job_succeeded": "job_succeeded",
+    "awaiting_glossary": "awaiting_glossary",
+    "glossary_auto_confirmed": "glossary_confirmed",
 }
 #: Giai đoạn → nhãn tiếng Việt hiển thị cho người dùng.
 STAGE_LABEL = {
@@ -83,12 +89,21 @@ class JobWorker:
         reclaimed = self.store.reclaim_stale(self.stale)
         if reclaimed:
             log.info("thu hồi %d task quá hạn lease", reclaimed)
+        expired_gates = self.store.sweep_glossary_gates()
+        if expired_gates:
+            log.info("tự xác nhận %d cổng glossary quá hạn", expired_gates)
         promoted = self.store.promote_queued(self.limit)
         for job in promoted:
             self.store.emit(job["id"], "job_queued", message_vi="Đã xếp hàng, chờ worker", data={"level": job["level"]})
         tasks = self.store.claim(limit=self.limit, per_job_limit=self.per_job_limit)
         results = [self.run_task(task) for task in tasks]
-        return {"reclaimed": reclaimed, "promoted": len(promoted), "claimed": len(tasks), "results": results}
+        return {
+            "reclaimed": reclaimed,
+            "gates_auto_confirmed": expired_gates,
+            "promoted": len(promoted),
+            "claimed": len(tasks),
+            "results": results,
+        }
 
     def run_forever(
         self, poll_s: float = 2.0, idle_exit_after: float | None = None
@@ -105,13 +120,15 @@ class JobWorker:
                 log.info("hàng đợi trống %.0fs — thoát", idle_s)
                 return
 
-    # ------------------------------------------------------------------ một task
+    # ------------------------------------------------------------------ một task = một giai đoạn
     def run_task(self, task: dict) -> dict:
+        """Chạy ĐÚNG giai đoạn của task, dựa trên điểm lưu của giai đoạn trước (M1)."""
         job = self.store.load_job(str(task["job_id"]))
         if job["cancel_requested"]:
             return {"job_id": job["id"], "canceled": True, **self.store.conclude_cancel(job)}
+        stage = task["stage"]
         try:
-            report_id = self._run_pipeline(task, job)
+            outcome = self._run_stage(task, job, stage)
         except Exception as exc:  # noqa: BLE001 - mọi lỗi phải trở thành trạng thái task/job
             retryable = _retryable(exc)
             state = self.store.task_failed(task["id"], code=type(exc).__name__, message=str(exc), retryable=retryable)
@@ -125,70 +142,133 @@ class JobWorker:
                 outcome = self.store.fail_job(job, code=type(exc).__name__, message=str(exc), retryable=retryable)
                 return {"job_id": job["id"], "failed": True, "tasks_failed": remaining, **outcome}
             return {"job_id": job["id"], "retry": True, "state": state}
+
         stats = (
             self.store.one("SELECT tokens_in, tokens_out, cost_usd FROM job_tasks WHERE id = %s", (task["id"],)) or {}
         )
+        if stats.get("cost_usd"):
+            self.store.record_spend(float(stats["cost_usd"]))
+
+        if outcome.get("awaiting_glossary"):
+            self.store.task_succeeded(
+                task["id"], result={"awaiting_glossary": True, "candidates": outcome["candidates"]}
+            )
+            return {
+                "job_id": job["id"],
+                "awaiting_glossary": True,
+                "candidates": outcome["candidates"],
+                "finished": False,
+            }
+
+        if outcome.get("finished"):
+            result = outcome["result"]
+            self.store.task_succeeded(
+                task["id"],
+                result={"report_id": str(outcome["report_id"]), "grade": result.grade, "stats": result.stats},
+                tokens_in=int(stats.get("tokens_in") or 0),
+                tokens_out=int(stats.get("tokens_out") or 0),
+                cost_usd=float(stats.get("cost_usd") or 0),
+            )
+            log.info(
+                "job %s xong: hạng %s, coverage %.2f, %d lời gọi LLM",
+                job["id"],
+                result.grade,
+                float(result.stats.get("coverage_core") or 0),
+                result.stats_llm.calls,
+            )
+            return {"job_id": job["id"], "report_id": outcome["report_id"], "grade": result.grade, "finished": True}
+
         self.store.task_succeeded(
             task["id"],
-            result={"report_id": str(report_id)},
+            result={"stage": stage, "done": True},
             tokens_in=int(stats.get("tokens_in") or 0),
             tokens_out=int(stats.get("tokens_out") or 0),
             cost_usd=float(stats.get("cost_usd") or 0),
         )
-        if stats.get("cost_usd"):
-            self.store.record_spend(float(stats["cost_usd"]))
-        return {"job_id": job["id"], "report_id": report_id}
+        return {"job_id": job["id"], "stage": stage, "finished": False, "awaiting_glossary": False}
 
-    # ------------------------------------------------------------------ pipeline
-    def _run_pipeline(self, task: dict, job: dict) -> str:
+    # ------------------------------------------------------------------ một giai đoạn
+    def _pipeline_for(self, job: dict, stage: str) -> Pipeline:
+        """Dựng pipeline: khôi phục điểm lưu gần nhất trước `stage` rồi nạp glossary đã chốt của job."""
         extraction = self.store.load_extraction(job)
-        options = JobOptions(level=job["level"], style_core_text=self.style_core_text or "")
-        pipeline = Pipeline(
-            extraction, self.client_factory(job), options, prompts_dir=self.prompts_dir, schemas_dir=self.schemas_dir
+        options = self._options(job)
+        _, state = self.store.latest_checkpoint_before(str(job["id"]), stage)
+        pipeline = Pipeline.from_state(
+            extraction,
+            self.client_factory(job),
+            options,
+            state or {},
+            prompts_dir=self.prompts_dir,
+            schemas_dir=self.schemas_dir,
         )
-        emitted = 0
-        finished_stages: list[str] = []
-        for stage in STAGE_SEQUENCE:
-            if self.store.scalar("SELECT cancel_requested FROM jobs WHERE id = %s", (job["id"],)):
-                self.store.conclude_cancel(self.store.load_job(job["id"]))
-                return ""
-            self.store.heartbeat(task["id"])
-            self.store.stage_started(job["id"], stage, int(task["attempt"] or 1))
+        preset = self._preset_glossary(job)
+        if preset:
+            pipeline.set_confirmed_glossary(preset)
+        return pipeline
+
+    def _preset_glossary(self, job: dict) -> list[dict]:
+        """Glossary dùng cho job: bản phát hành người dùng chọn (chuẩn/cá nhân) + mục đã chốt của job.
+
+        Mục của job thắng khi trùng `source_term` (người dùng đã sửa thì bản sửa được dùng).
+        """
+        options = dict(job.get("options") or {})
+        merged: dict[str, dict] = {}
+        for entry in self.store.load_shared_glossary(list(options.get("glossary_ids") or [])):
+            merged[str(entry["source_term"]).casefold()] = entry
+        for entry in self.store.load_job_glossary(str(job["id"])):
+            merged[str(entry["source_term"]).casefold()] = entry
+        return list(merged.values())
+
+    def _options(self, job: dict) -> JobOptions:
+        """Lựa chọn của job (cột `options` jsonb) + Lõi văn phong đã ghim — chỉ nhận khoá hợp lệ."""
+        raw = dict(job.get("options") or {})
+        allowed = {k: v for k, v in raw.items() if k in JobOptions.__dataclass_fields__}
+        allowed.pop("style_core_text", None)
+        return JobOptions(level=job["level"], style_core_text=self.style_core_text or "", **allowed)
+
+    def _run_stage(self, task: dict, job: dict, stage: str) -> dict:
+        pipeline = self._pipeline_for(job, stage)
+        before_in, before_out = pipeline.result.stats_llm.tokens_in, pipeline.result.stats_llm.tokens_out
+        self.store.heartbeat(task["id"])
+        self.store.stage_started(job["id"], stage, int(task["attempt"] or 1))
+        if stage == "glossary" and bool(dict(job.get("options") or {}).get("glossary_confirmed")):
+            # Người dùng đã chốt qua cổng duyệt: dùng đúng danh sách đó, không gọi P1 lần nữa.
+            pipeline.stage_glossary_decided(self.store.load_job_glossary(str(job["id"])))
+        else:
             getattr(pipeline, f"stage_{stage}")()
-            self.store.stage_finished(job["id"], stage, metrics=self._metrics(pipeline, stage))
-            emitted = self._flush_events(job["id"], pipeline.result.events, emitted, stage=stage)
-            finished_stages.append(stage)
-            self.store.tx_execute(
-                "UPDATE job_tasks SET result = %s, heartbeat_at = now() WHERE id = %s",
-                (to_jsonb({"done_stages": finished_stages, "llm_calls": pipeline.result.stats_llm.calls}), task["id"]),
-            )
-            self.store.tx_execute(
-                "UPDATE job_tasks SET tokens_in = %s, tokens_out = %s WHERE id = %s",
-                (pipeline.result.stats_llm.tokens_in, pipeline.result.stats_llm.tokens_out, task["id"]),
-            )
+        self._flush_events(job["id"], pipeline.result.events, 0, stage=stage)
+        self.store.stage_finished(job["id"], stage, metrics=self._metrics(pipeline, stage))
+
+        delta_in = pipeline.result.stats_llm.tokens_in - before_in
+        delta_out = pipeline.result.stats_llm.tokens_out - before_out
+        stage_cost = self._cost_usd(delta_in, delta_out)
+        self.store.tx_execute(
+            "UPDATE job_tasks SET tokens_in = %s, tokens_out = %s, cost_usd = %s, heartbeat_at = now() WHERE id = %s",
+            (delta_in, delta_out, stage_cost, task["id"]),
+        )
+
+        if stage == "glossary":
+            if pipeline.gate_pending:
+                candidates = self.store.save_job_glossary(str(job["id"]), pipeline.pending_glossary, status="pending")
+                self.store.open_glossary_gate(
+                    str(job["id"]), candidates=candidates, minutes=pipeline.options.glossary_review_minutes
+                )
+                return {"awaiting_glossary": True, "candidates": candidates}
+            # Tài liệu ngắn / người dùng bỏ qua cổng: ghi lại các mục đã tự xác nhận.
+            self.store.save_job_glossary(str(job["id"]), pipeline.glossary, status="confirmed")
+
+        if stage != STAGE_SEQUENCE[-1]:
+            # Huỷ giữa chừng: không lưu điểm lưu để lần chạy sau vẫn dừng đúng chỗ.
+            if not self.store.scalar("SELECT cancel_requested FROM jobs WHERE id = %s", (job["id"],)):
+                self.store.save_checkpoint(job["id"], stage, pipeline.as_state())
+            return {"finished": False, "stage": stage}
 
         result = finalize(pipeline)
-        self._flush_events(job["id"], result.events, emitted, stage="repair")
         shadow_usd = self._cost_usd(result.stats_llm.tokens_in, result.stats_llm.tokens_out)
         self.store.tx_execute("UPDATE jobs SET actual_shadow_usd = %s WHERE id = %s", (shadow_usd, job["id"]))
-        report_id = self.store.save_report(job, result)
+        report_id = self.store.save_report(job, result, pipeline.segment_rows())
         self.store.finish_job(job, result)
-        self.store.tx_execute(
-            "UPDATE job_tasks SET result = %s, cost_usd = %s WHERE id = %s",
-            (
-                to_jsonb({"report_id": report_id, "grade": result.grade, "stats": result.stats}),
-                shadow_usd,
-                task["id"],
-            ),
-        )
-        log.info(
-            "job %s xong: hạng %s, coverage %.2f, %d lời gọi LLM",
-            job["id"],
-            result.grade,
-            float(result.stats.get("coverage_core") or 0),
-            result.stats_llm.calls,
-        )
-        return report_id
+        return {"finished": True, "report_id": report_id, "result": result}
 
     def _cost_usd(self, tokens_in: int, tokens_out: int) -> float:
         """Chi phí 'bóng' theo giá tham chiếu — dùng chính hàm SQL `llm_cost_usd` để không lệch giá."""

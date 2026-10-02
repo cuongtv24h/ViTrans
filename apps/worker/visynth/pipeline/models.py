@@ -36,6 +36,25 @@ class LLMStats:
     retries: int = 0
     by_prompt: dict[str, int] = field(default_factory=dict)
 
+    def as_dict(self) -> dict:
+        return {
+            "calls": self.calls,
+            "tokens_in": self.tokens_in,
+            "tokens_out": self.tokens_out,
+            "retries": self.retries,
+            "by_prompt": dict(self.by_prompt),
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> LLMStats:
+        stats = cls()
+        stats.calls = int(d.get("calls") or 0)
+        stats.tokens_in = int(d.get("tokens_in") or 0)
+        stats.tokens_out = int(d.get("tokens_out") or 0)
+        stats.retries = int(d.get("retries") or 0)
+        stats.by_prompt = dict(d.get("by_prompt") or {})
+        return stats
+
     def add(self, prompt_id: str, tokens_in: int, tokens_out: int) -> None:
         self.calls += 1
         self.tokens_in += tokens_in
@@ -64,6 +83,29 @@ class Unit:
     merged_into: str | None = None
     section_id: str | None = None
     omitted_reason: str | None = None
+
+    @classmethod
+    def from_dict(cls, d: dict) -> Unit:
+        """Dựng lại từ `as_dict()` — dùng khi chạy tiếp pipeline từ điểm lưu."""
+        return cls(
+            id=d["id"],
+            segment_id=d.get("segment_id", ""),
+            local_id=d.get("local_id", ""),
+            type=d.get("type", "fact_data"),
+            importance=d.get("importance", "supporting"),
+            title_vi=d.get("title_vi", ""),
+            statement_vi=d.get("statement_vi", ""),
+            topics=list(d.get("topics") or []),
+            evidence=[dict(e) for e in (d.get("evidence") or [])],
+            numbers=list(d.get("numbers") or []),
+            terms=list(d.get("terms") or []),
+            relations=[dict(r) for r in (d.get("relations") or [])],
+            attribution=d.get("attribution", "author"),
+            state=d.get("state", "active"),
+            merged_into=d.get("merged_into"),
+            section_id=d.get("section_id"),
+            omitted_reason=d.get("omitted_reason"),
+        )
 
     def as_dict(self) -> dict:
         return {
@@ -98,6 +140,18 @@ class Section:
     unit_ids: list[str]
     target_words: int
     format_hint: str = "narrative"
+
+    @classmethod
+    def from_dict(cls, d: dict) -> Section:
+        return cls(
+            id=d["id"],
+            kind=d.get("kind", "body"),
+            title_vi=d.get("title_vi", ""),
+            purpose_vi=d.get("purpose_vi", ""),
+            unit_ids=list(d.get("unit_ids") or []),
+            target_words=int(d.get("target_words") or 0),
+            format_hint=d.get("format_hint", "narrative"),
+        )
 
     def as_dict(self) -> dict:
         return {
@@ -136,6 +190,21 @@ class Block:
     flagged: bool = False
     removed: bool = False
     repair_round: int = 0
+
+    @classmethod
+    def from_dict(cls, d: dict) -> Block:
+        return cls(
+            block_id=d["block_id"],
+            section_id=d.get("section_id", ""),
+            type=d.get("type", "paragraph"),
+            markdown_vi=d.get("markdown_vi", ""),
+            cites=list(d.get("cites") or []),
+            verdict=d.get("verdict", "supported"),
+            issues=[dict(i) for i in (d.get("issues") or [])],
+            flagged=bool(d.get("flagged")),
+            removed=bool(d.get("removed")),
+            repair_round=int(d.get("repair_round") or 0),
+        )
 
     def as_dict(self) -> dict:
         return {

@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 from visynth.estimate import Price, estimate
 from visynth_api.db import Database
 from visynth_api.errors import Problem, sql_problem
-from visynth_api.models import JobCreate
+from visynth_api.models import JobCreate, JobGlossaryConfirm
 from visynth_api.security import current_user
 
 router = APIRouter(tags=["jobs"])
@@ -22,7 +22,7 @@ JOB_COLUMNS = (
     "id, document_id, level, source_lang, target_lang, status, current_stage, progress, est_credits, charged_credits, "
     "refunded_credits, est_cost_usd, actual_cost_usd, actual_shadow_usd, max_cost_usd, privacy_class, quality_grade, "
     "style_core_version_id, glossary_releases, cancel_requested, error_code, error_message, created_at, started_at, "
-    "finished_at, expires_at"
+    "finished_at, expires_at, glossary_review_deadline, glossary_auto_confirmed, options"
 )
 STAGES = (
     "extract",
@@ -51,7 +51,7 @@ def _db(request: Request) -> Database:
 
 
 #: Cột `numeric` trong PostgreSQL trả `Decimal`; hợp đồng OpenAPI khai `number` nên đổi sang float khi trả.
-_MONEY_FIELDS = ("est_cost_usd", "actual_cost_usd", "actual_shadow_usd", "max_cost_usd")
+_MONEY_FIELDS = ("est_cost_usd", "actual_cost_usd", "actual_shadow_usd", "max_cost_usd", "progress")
 
 
 def shape_job(job: dict) -> dict:
@@ -145,6 +145,27 @@ def create_job(
             if spend and spend["paused"]:
                 raise Problem(503, "spend_cap_reached", "hệ thống đang tạm dừng nhận job mới để giữ trần chi tiêu ngày")
 
+            # Mức có được bật không (AC-26: bỏ/thêm trong `app_settings.enabled_levels`, không cần triển khai lại).
+            cur.execute(
+                "SELECT key, value FROM app_settings WHERE key IN ('enabled_levels', 'full_translation_daily_limit')"
+            )
+            settings_map = {row["key"]: row["value"] for row in cur.fetchall()}
+            levels = settings_map.get("enabled_levels")
+            if isinstance(levels, str):  # phòng khi driver trả jsonb dạng chuỗi
+                levels = json.loads(levels)
+            if isinstance(levels, list) and body.level not in levels:
+                raise Problem(422, "level_disabled", f"mức {body.level} đang tắt")
+            if body.level == "full_translation":
+                limit = settings_map.get("full_translation_daily_limit")
+                cur.execute(
+                    "SELECT count(*) AS used FROM jobs WHERE user_id = %s AND level = 'full_translation' "
+                    "AND created_at >= date_trunc('day', now()) AND status NOT IN ('canceled', 'expired')",
+                    (user["id"],),
+                )
+                used = cur.fetchone()["used"]
+                if limit is not None and int(used or 0) >= int(limit):
+                    raise Problem(422, "full_translation_daily_limit", "đã dùng hết hạn mức dịch đầy đủ hôm nay")
+
             cur.execute(
                 "SELECT word_count, language_code, status FROM documents WHERE id = %s AND user_id = %s "
                 "AND deleted_at IS NULL FOR UPDATE",
@@ -157,6 +178,29 @@ def create_job(
                 raise Problem(409, "document_not_ready", f"tài liệu đang ở trạng thái {document['status']}")
 
             quote = _quote(db, document["word_count"], body.level, document["language_code"] or "vi")
+
+            # Lõi văn phong: chỉ nhận bản ĐÃ DUYỆT (§19.6); `style_core_id` là cách gọi theo hợp đồng.
+            style_version_id = body.style_core_version_id
+            if body.style_core_id and not style_version_id:
+                cur.execute(
+                    "SELECT id FROM style_core_versions WHERE style_core_id = %s AND status = 'approved' "
+                    "ORDER BY approved_at DESC NULLS LAST LIMIT 1",
+                    (body.style_core_id,),
+                )
+                approved = cur.fetchone()
+                if approved is None:
+                    raise Problem(409, "style_core_not_approved", "Lõi văn phong chưa có phiên bản nào được duyệt")
+                style_version_id = approved["id"]
+
+            options = {
+                **body.options,
+                "skip_glossary_review": body.skip_glossary_review,
+                "custom_instructions": body.custom_instructions,
+                "notify_by_email": body.notify_by_email,
+                "glossary_ids": list(body.glossary_ids),
+            }
+            if body.recipe_id:
+                options["recipe_id"] = body.recipe_id
             cur.execute(
                 f"""INSERT INTO jobs (user_id, document_id, level, source_lang, target_lang, options, status,
                         est_credits, est_cost_usd, max_cost_usd, privacy_class, style_core_version_id,
@@ -169,12 +213,12 @@ def create_job(
                     body.level,
                     document["language_code"],
                     body.target_lang,
-                    psycopg.types.json.Jsonb(body.options),
+                    psycopg.types.json.Jsonb(options),
                     quote["credits"],
                     quote["cost_usd"],
                     body.max_cost_usd,
                     body.privacy_class,
-                    body.style_core_version_id,
+                    style_version_id,
                     psycopg.types.json.Jsonb({"pool_version": None, "profiles": {}}),
                     psycopg.types.json.Jsonb({}),
                     idempotency_key,
@@ -266,15 +310,164 @@ def cancel_job(job_id: str, request: Request, user: dict = Depends(current_user)
                 cur.execute("UPDATE jobs SET cancel_requested = true WHERE id = %s", (job_id,))
             cur.execute(f"SELECT {JOB_COLUMNS} FROM jobs WHERE id = %s", (job_id,))
             job = cur.fetchone()
-            if job["status"] == "canceled":  # chưa chạy: đóng luồng SSE bằng sự kiện cuối
-                self_payload = {"type": "job_canceled", "job_id": str(job_id), "data": {"refunded_credits": refunded}}
-                cur.execute(
-                    "INSERT INTO job_events (job_id, type, payload) VALUES (%s, 'job_canceled', %s)",
-                    (job_id, psycopg.types.json.Jsonb(self_payload)),
-                )
+            cancel_payload = {
+                "type": "job_canceled",
+                "job_id": str(job_id),
+                "data": {"refunded_credits": refunded, "requested": job["status"] != "canceled"},
+            }
+            cur.execute(
+                "INSERT INTO job_events (job_id, type, payload) VALUES (%s, 'job_canceled', %s)",
+                (job_id, psycopg.types.json.Jsonb(cancel_payload)),
+            )
     except psycopg.Error as exc:
         raise sql_problem(exc) from exc
     return {"job": shape_job(job), "refunded_credits": refunded}
+
+
+# ------------------------------------------------------------------ cổng duyệt glossary (SPEC §6.4)
+
+JOB_GLOSSARY_COLUMNS = (
+    "id, source_term, target_term, keep_original, case_sensitive, forbidden_variants, term_type, note, "
+    "origin, status, confidence, priority"
+)
+
+
+@router.get("/jobs/{job_id}/glossary")
+def get_job_glossary(job_id: str, request: Request, user: dict = Depends(current_user)) -> dict:
+    """Glossary của job để người dùng duyệt ở trạng thái `awaiting_glossary` (gợi ý P1 xếp độ tin cậy tăng dần)."""
+    db = _db(request)
+    job = _job_or_404(db, job_id, user)
+    entries = db.all(
+        f"""SELECT {JOB_GLOSSARY_COLUMNS} FROM job_glossary_entries WHERE job_id = %s
+             ORDER BY (status = 'suggested') DESC, confidence ASC NULLS LAST, lower(source_term)""",
+        (job_id,),
+    )
+    return {
+        "entries": entries,
+        "review_deadline": job["glossary_review_deadline"],
+        "auto_confirmed": job["glossary_auto_confirmed"],
+        "job": shape_job(job),
+    }
+
+
+@router.post("/jobs/{job_id}/glossary/confirm", status_code=202)
+def confirm_job_glossary(
+    job_id: str,
+    body: JobGlossaryConfirm,
+    request: Request,
+    user: dict = Depends(current_user),
+) -> dict:
+    """Ghi quyết định của người dùng rồi cho job chạy tiếp (`awaiting_glossary` → `queued`)."""
+    db: Database = _db(request)
+    try:
+        with db.tx() as cur:
+            cur.execute(
+                f"SELECT {JOB_COLUMNS} FROM jobs WHERE id = %s AND user_id = %s FOR UPDATE", (job_id, user["id"])
+            )
+            job = cur.fetchone()
+            if job is None:
+                raise Problem(404, "not_found", "không có job này")
+            if job["status"] not in ("awaiting_glossary", "queued", "running"):
+                raise Problem(409, "glossary_not_ready", f"job đang ở trạng thái {job['status']}")
+            for entry in body.entries:
+                origin = entry.origin or ("user_edit" if entry.status != "suggested" else "suggested")
+                cur.execute(
+                    """INSERT INTO job_glossary_entries (job_id, source_term, target_term, keep_original,
+                            case_sensitive, forbidden_variants, term_type, note, origin, status, confidence)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                       ON CONFLICT (job_id, lower(source_term)) DO UPDATE SET
+                            target_term = EXCLUDED.target_term,
+                            keep_original = EXCLUDED.keep_original,
+                            case_sensitive = EXCLUDED.case_sensitive,
+                            forbidden_variants = EXCLUDED.forbidden_variants,
+                            term_type = EXCLUDED.term_type,
+                            note = EXCLUDED.note,
+                            origin = EXCLUDED.origin,
+                            status = EXCLUDED.status,
+                            confidence = EXCLUDED.confidence""",
+                    (
+                        job_id,
+                        entry.source_term,
+                        entry.target_term,
+                        entry.keep_original,
+                        entry.case_sensitive,
+                        list(entry.forbidden_variants),
+                        entry.term_type,
+                        entry.note,
+                        origin,
+                        entry.status,
+                        entry.confidence,
+                    ),
+                )
+            # Gợi ý không được nhắc tới trong yêu cầu: coi như bị loại (người dùng đã chốt danh sách).
+            cur.execute(
+                "UPDATE job_glossary_entries SET status = 'rejected' WHERE job_id = %s AND status = 'suggested'",
+                (job_id,),
+            )
+            if body.save_to_glossary_id:
+                cur.execute("SELECT kind, owner_id FROM glossaries WHERE id = %s", (body.save_to_glossary_id,))
+                glossary = cur.fetchone()
+                if glossary is None or glossary["owner_id"] != user["id"] or glossary["kind"] != "personal":
+                    raise Problem(404, "not_found", "không có glossary cá nhân này")
+                for entry in body.entries:
+                    if entry.status != "confirmed":
+                        continue
+                    cur.execute(
+                        """INSERT INTO glossary_entries (glossary_id, source_term, target_term, keep_original,
+                                case_sensitive, forbidden_variants, term_type, note, origin, status)
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'user_edit', 'confirmed')
+                           ON CONFLICT (glossary_id, lower(source_term)) DO UPDATE SET
+                                target_term = EXCLUDED.target_term, status = 'confirmed', updated_at = now()""",
+                        (
+                            body.save_to_glossary_id,
+                            entry.source_term,
+                            entry.target_term,
+                            entry.keep_original,
+                            entry.case_sensitive,
+                            list(entry.forbidden_variants),
+                            entry.term_type,
+                            entry.note,
+                        ),
+                    )
+            if job["status"] == "awaiting_glossary":
+                # Chạy tiếp từ giai đoạn `glossary`: dùng danh sách đã duyệt (không gọi lại P1) rồi sang `map`.
+                cur.execute(
+                    "UPDATE jobs SET status = 'queued', glossary_review_deadline = NULL, "
+                    "options = options || '{\"glossary_confirmed\": true}'::jsonb WHERE id = %s",
+                    (job_id,),
+                )
+                cur.execute("DELETE FROM job_tasks WHERE job_id = %s AND stage <> 'glossary'", (job_id,))
+                cur.execute("DELETE FROM job_checkpoints WHERE job_id = %s AND stage <> 'profile'", (job_id,))
+                cur.execute(
+                    "UPDATE job_stages SET status = 'pending', attempt = 0, started_at = NULL, finished_at = NULL, "
+                    "metrics = '{}'::jsonb, error = NULL WHERE job_id = %s AND status <> 'skipped' AND stage <> 'profile'",
+                    (job_id,),
+                )
+                cur.execute(
+                    """INSERT INTO job_tasks (job_id, stage, task_key, max_attempts)
+                       VALUES (%s, 'glossary', 'glossary:confirmed', 3)
+                       ON CONFLICT (job_id, stage, task_key) DO NOTHING""",
+                    (job_id,),
+                )
+                confirmed = sum(1 for e in body.entries if e.status == "confirmed")
+                cur.execute(
+                    "INSERT INTO job_events (job_id, type, payload) VALUES (%s, 'glossary_confirmed', %s)",
+                    (
+                        job_id,
+                        psycopg.types.json.Jsonb(
+                            {
+                                "type": "glossary_confirmed",
+                                "job_id": str(job_id),
+                                "data": {"confirmed": confirmed, "rejected": max(0, len(body.entries) - confirmed)},
+                            }
+                        ),
+                    ),
+                )
+            cur.execute(f"SELECT {JOB_COLUMNS} FROM jobs WHERE id = %s", (job_id,))
+            job = cur.fetchone()
+    except psycopg.Error as exc:
+        raise sql_problem(exc) from exc
+    return {"job": shape_job(job), "entries": len(body.entries)}
 
 
 # ------------------------------------------------------------------ SSE

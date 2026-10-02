@@ -10,6 +10,7 @@ import json
 import random
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from visynth.checks.glossary import GlossaryEntry, first_use_by_section
@@ -31,6 +32,18 @@ from visynth.pipeline.models import (
     JobResult,
     Section,
     Unit,
+)
+from visynth.pipeline.models import (
+    Block as _Block,
+)
+from visynth.pipeline.models import (
+    LLMStats as _LLMStats,
+)
+from visynth.pipeline.models import (
+    Section as _Section,
+)
+from visynth.pipeline.models import (
+    Unit as _Unit,
 )
 from visynth.prompts import (
     Prompt,
@@ -99,12 +112,119 @@ class Pipeline:
         self.result = JobResult(title=extraction.title, level=self.options.level)
         self.profile: dict = {}
         self.segments: list[Segment] = []
+        self.sections: list[Section] = []
         self.glossary: list[dict] = []  # mục đã xác nhận (ràng buộc cứng)
         self.glossary_entries: list[GlossaryEntry] = []
         self.first_use: dict[str, set[str]] = {}
+        self.gate_pending = False  # True: pipeline dừng sau giai đoạn `glossary` chờ người dùng duyệt
+        self.pending_glossary: list[dict] = []  # gợi ý P1 chưa được chốt (chỉ có khi mở cổng)
         self._rng = random.Random(seed)
         self._scope_text = ""  # P8 ghi vào đây; `assemble` ghép vào Markdown
         self.paragraph_text = {p.pid: p.content for p in extraction.paragraphs}
+
+    # ------------------------------------------------------------------ điểm lưu (checkpoint)
+
+    #: Phiên bản định dạng điểm lưu — đổi khi cấu trúc `as_state()` thay đổi.
+    STATE_VERSION = 1
+
+    def segment_rows(self) -> list[dict]:
+        """Hàng `segments` để ghi CSDL (điểm lưu chỉ giữ phần đã tính, không giữ đoạn văn)."""
+        keys = ("segment_id", "idx", "first_pid", "last_pid", "token_count", "section_id")
+        rows = []
+        for seg in self.segments:
+            if hasattr(seg, "as_row"):
+                rows.append(dict(seg.as_row()))
+            else:
+                rows.append({key: getattr(seg, key, None) for key in keys})
+        return [row for row in rows if row.get("segment_id")]
+
+    def as_state(self) -> dict:
+        """Ảnh chụp trạng thái sau một giai đoạn, đủ để chạy tiếp giai đoạn kế tiếp."""
+        return {
+            "version": self.STATE_VERSION,
+            "profile": self.profile,
+            "glossary": self.glossary,
+            "pending_glossary": self.pending_glossary,
+            "gate_pending": bool(self.gate_pending),
+            "sections": [x.as_dict() for x in self.sections],
+            "first_use": {key: sorted(value) for key, value in self.first_use.items()},
+            "segment_rows": self.segment_rows(),
+            "segment_labels": {
+                getattr(seg, "segment_id", str(getattr(seg, "idx", i))): getattr(seg, "labels", {})
+                for i, seg in enumerate(self.segments)
+            },
+            "scope_text": self._scope_text,
+            "result": {
+                "units": [u.as_dict() for u in self.result.units],
+                "sections": [x.as_dict() for x in self.result.sections],
+                "blocks": [b.as_dict() for b in self.result.blocks],
+                "profile": self.result.profile,
+                "plan": self.result.plan,
+                "glossary": self.result.glossary,
+                "glossary_auto_confirmed": self.result.glossary_auto_confirmed,
+                "verdicts": self.result.verdicts,
+                "coverage": self.result.coverage,
+                "checks": self.result.checks,
+                "stats": self.result.stats,
+                "grade": self.result.grade,
+                "warnings": self.result.warnings,
+                "stats_llm": self.result.stats_llm.as_dict(),
+                "metrics": self.result.metrics,
+            },
+        }
+
+    @classmethod
+    def from_state(
+        cls,
+        extraction: Extraction,
+        client: LLMClient,
+        options: JobOptions | None,
+        state: dict,
+        *,
+        prompts_dir: str | Path | None = None,
+        schemas_dir: str | Path | None = None,
+        seed: int = 7,
+    ) -> Pipeline:
+        """Dựng lại pipeline từ điểm lưu (`as_state()`)."""
+        pipeline = cls(extraction, client, options, prompts_dir=prompts_dir, schemas_dir=schemas_dir, seed=seed)
+        if not state:
+            return pipeline
+        if int(state.get("version") or 0) != cls.STATE_VERSION:
+            raise ValueError(f"điểm lưu phiên bản {state.get('version')} không đọc được")
+        pipeline.profile = state.get("profile") or {}
+        pipeline.glossary = list(state.get("glossary") or [])
+        pipeline.pending_glossary = list(state.get("pending_glossary") or [])
+        pipeline.gate_pending = bool(state.get("gate_pending"))
+        pipeline._scope_text = state.get("scope_text") or ""
+        source_sections = state.get("sections") or []
+        if source_sections:
+            pipeline.sections = [_Section.from_dict(d) for d in source_sections]
+        pipeline.first_use = {key: set(value or []) for key, value in (state.get("first_use") or {}).items()}
+        labels = state.get("segment_labels") or {}
+        if labels or state.get("segment_rows"):
+            rows = state.get("segment_rows") or [{"segment_id": sid} for sid in labels]
+            pipeline.segments = [
+                SimpleNamespace(**{**row, "labels": dict(labels.get(row["segment_id"], {}))}) for row in rows
+            ]
+        res = state.get("result") or {}
+        result = pipeline.result
+        result.units = [_Unit.from_dict(d) for d in res.get("units") or []]
+        result.sections = [_Section.from_dict(d) for d in res.get("sections") or []]
+        result.blocks = [_Block.from_dict(d) for d in res.get("blocks") or []]
+        result.profile = res.get("profile") or {}
+        result.plan = res.get("plan") or {}
+        result.glossary = list(res.get("glossary") or [])
+        result.glossary_auto_confirmed = bool(res.get("glossary_auto_confirmed"))
+        result.verdicts = res.get("verdicts") or {}
+        result.coverage = res.get("coverage") or {}
+        result.checks = res.get("checks") or {}
+        result.stats = res.get("stats") or {}
+        result.grade = res.get("grade") or "C"
+        result.warnings = list(res.get("warnings") or [])
+        result.stats_llm = _LLMStats.from_dict(res.get("stats_llm") or {})
+        result.metrics = res.get("metrics") or {}
+        pipeline._set_glossary_entries(pipeline.glossary)
+        return pipeline
 
     # ------------------------------------------------------------------ lời gọi LLM
 
@@ -249,7 +369,8 @@ class Pipeline:
     # ------------------------------------------------------------------ P1 — glossary và cổng duyệt
 
     def stage_glossary(self, input_entries: list[dict] | None = None) -> list[dict]:
-        existing = list(input_entries or [])
+        # Không truyền gì thì lấy glossary đã nạp sẵn cho pipeline (bản phát hành người dùng chọn).
+        existing = list(input_entries) if input_entries is not None else [dict(e) for e in self.glossary]
         text = self.ext.full_text()
         max_chars = 700_000 * 4  # ≤ 700k token trong một lời gọi (ước lượng thô khi chưa có count_tokens)
         windows = [text] if len(text) <= max_chars else _windows(text, 300_000 * 4, overlap=2_000)
@@ -283,8 +404,8 @@ class Pipeline:
             }
             for c in merged
         ]
-        self.result.glossary = entries
         self._apply_glossary_gate(entries, existing)
+        self.result.glossary = list(self.glossary) + list(self.pending_glossary)
         self.result.emit("stage_done", stage="glossary", candidates=len(entries), confirmed=len(self.glossary))
         return self.glossary
 
@@ -294,6 +415,8 @@ class Pipeline:
         if self.ext.word_count < self.options.gate_min_words or self.options.skip_glossary_review:
             auto = [e for e in entries if e["confidence"] >= self.options.auto_confirm_min_confidence]
             self.glossary = confirmed_existing + [dict(e, status="confirmed") for e in auto]
+            self.pending_glossary = []
+            self.gate_pending = False
             self.result.glossary_auto_confirmed = True
             self.result.emit(
                 "glossary_auto_confirmed",
@@ -302,16 +425,29 @@ class Pipeline:
                 reason="short_doc" if self.ext.word_count < self.options.gate_min_words else "user_skipped",
             )
         else:
-            # M1: UI chờ người dùng `POST /jobs/{id}/glossary/confirm`; ở M0 CLI không có UI nên áp quy tắc hết hạn 15 phút.
-            auto = [e for e in entries if e["confidence"] >= self.options.auto_confirm_min_confidence]
-            self.glossary = confirmed_existing + [dict(e, status="confirmed") for e in auto]
-            self.result.glossary_auto_confirmed = True
+            # Tài liệu dài: job dừng ở `awaiting_glossary` cho người dùng duyệt
+            # (`POST /jobs/{id}/glossary/confirm`); hết hạn 15 phút thì worker tự xác nhận (AC-02/AC-04).
+            self.glossary = confirmed_existing
+            self.pending_glossary = [dict(e, status="suggested") for e in entries]
+            self.gate_pending = True
             self.result.emit(
-                "glossary_auto_confirmed",
-                kept=len(auto),
-                dropped=len(entries) - len(auto),
-                reason="deadline_m0_cli",
+                "awaiting_glossary",
+                candidates=len(entries),
+                minutes=self.options.glossary_review_minutes,
             )
+        self._set_glossary_entries(self.glossary)
+
+    def stage_glossary_decided(self, entries: list[dict]) -> list[dict]:
+        """Chạy lại giai đoạn `glossary` sau khi người dùng đã duyệt: KHÔNG gọi P1 lần nữa."""
+        self.set_confirmed_glossary(entries)
+        self.pending_glossary = []
+        self.result.glossary = list(self.glossary)
+        self.result.emit("glossary_confirmed", confirmed=len(self.glossary), source="gate")
+        return self.glossary
+        self._set_glossary_entries(self.glossary)
+
+    def _set_glossary_entries(self, entries: list[dict]) -> None:
+        """Đồng bộ danh sách ràng buộc cứng (`GlossaryEntry`) từ các mục đã xác nhận."""
         self.glossary_entries = [
             GlossaryEntry(
                 source_term=e["source_term"],
@@ -320,8 +456,16 @@ class Pipeline:
                 case_sensitive=bool(e.get("case_sensitive")),
                 forbidden_variants=tuple(e.get("forbidden_variants", [])),
             )
-            for e in self.glossary
+            for e in entries
         ]
+
+    def set_confirmed_glossary(self, entries: list[dict]) -> None:
+        """Nạp glossary đã chốt của job (sau cổng duyệt/tự xác nhận) khi chạy tiếp pipeline."""
+        kept = [dict(e, status="confirmed") for e in entries if e.get("status", "confirmed") == "confirmed"]
+        self.glossary = kept
+        self.result.glossary = kept
+        self._set_glossary_entries(kept)
+        self.gate_pending = False
 
     # ------------------------------------------------------------------ P2 — kê khai khuyến thức
 

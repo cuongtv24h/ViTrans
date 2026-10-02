@@ -40,13 +40,41 @@ class RedeemIn(BaseModel):
 
 
 class JobCreate(BaseModel):
+    """Thân `POST /jobs` — theo hợp đồng, kèm vài trường nội bộ của bản tham chiếu."""
+
     document_id: str
     level: Level
+    recipe_id: str | None = None
+    glossary_ids: list[str] = Field(default_factory=list, max_length=5)
+    custom_instructions: str = Field(default="", max_length=1000)
+    notify_by_email: bool = False
+    skip_glossary_review: bool = False
+    style_core_id: str | None = None
     target_lang: str = Field(default="vi", max_length=10)
     privacy_class: Literal["standard", "private"] = "standard"
     style_core_version_id: str | None = None
     max_cost_usd: float | None = Field(default=None, gt=0)
     options: dict[str, Any] = Field(default_factory=dict)
+
+
+class JobGlossaryItem(BaseModel):
+    """Một mục trong `POST /jobs/{id}/glossary/confirm` (khớp `JobGlossaryEntry`)."""
+
+    source_term: str = Field(min_length=1, max_length=200)
+    target_term: str = Field(min_length=1, max_length=200)
+    keep_original: bool = False
+    case_sensitive: bool = False
+    forbidden_variants: list[str] = Field(default_factory=list, max_length=20)
+    term_type: Literal["concept", "proper_name", "acronym", "title", "unit", "other"] = "concept"
+    note: str | None = Field(default=None, max_length=500)
+    status: Literal["suggested", "confirmed", "rejected"] = "confirmed"
+    origin: Literal["shared", "personal", "suggested", "user_edit"] | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+class JobGlossaryConfirm(BaseModel):
+    entries: list[JobGlossaryItem] = Field(default_factory=list, max_length=400)
+    save_to_glossary_id: str | None = None
 
 
 class InviteCreate(BaseModel):

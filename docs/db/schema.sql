@@ -337,6 +337,17 @@ CREATE TABLE job_stages (
   PRIMARY KEY (job_id, stage)
 );
 
+-- Điểm lưu trạng thái pipeline sau mỗi giai đoạn: worker chết giữa chừng thì task được thu hồi và
+-- chạy tiếp từ giai đoạn kế tiếp, KHÔNG chạy lại (và không tính tiền lại) các giai đoạn đã xong.
+CREATE TABLE job_checkpoints (
+  job_id     uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  stage      text NOT NULL,
+  state      jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (job_id, stage)
+);
+
 CREATE TABLE job_tasks (
   id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   job_id       uuid NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,

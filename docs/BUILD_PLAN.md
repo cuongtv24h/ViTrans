@@ -134,14 +134,14 @@ Ba việc dời có chủ ý: (a) P9 `full_translation`, P10 OCR, P11, P12/P13 (
 
 | Hạng mục | Trạng thái | Ghi chú |
 |---|---|---|
-| CSDL & hàng đợi | 🟡 phần lớn | Alembic `0001_baseline` (áp `docs/db/schema.sql`) + `0002_local_auth`; `claim_tasks`/`reclaim_stale_tasks`/`defer_task`/hàm tín dụng/trần chi tiêu đã chạy trên PostgreSQL thật; test `tests/test_db_schema.py` (8 ca) + `tests/test_api_m1.py` (7 ca). Còn thiếu: chạy lại job theo từng giai đoạn (hiện chạy lại cả pipeline khi task bị thu hồi) |
+| CSDL & hàng đợi | 🟢 lõi xong | Alembic `0001_baseline` (áp `docs/db/schema.sql`) + `0002_local_auth` + `0003_job_checkpoints`; `claim_tasks`/`reclaim_stale_tasks`/`defer_task`/hàm tín dụng/trần chi tiêu trên PostgreSQL thật. **Mỗi task = một giai đoạn**, sau mỗi giai đoạn worker ghi `job_checkpoints.state`; task bị thu hồi hoặc lỗi tạm thời chỉ chạy lại ĐÚNG giai đoạn đó (không gọi lại LLM cho phần đã xong, không trừ tiền hai lần). Ghi thêm `segments` + `knowledge_units` để trang đọc tra được trích dẫn. Test: `tests/test_db_schema.py` (8 ca) + `tests/test_api_m1.py` (10 ca, gồm cổng glossary và mức tắt) |
 | API & SSE | 🟢 lõi xong | `/auth/*`, `/me`, `/me/consents`, `/credits`, `/invites/redeem`, `/documents*`, `/jobs*` (gồm `Idempotency-Key`, SSE + `Last-Event-ID`), `/glossaries*` (CRUD + CSV), `/reports*` (xem/xoá/xuất/flag/feedback), `/recipes`, `/style-cores`, `/takedown`, `/admin/*` |
-| Pipeline production | 🟡 | `visynth worker` chạy 7 giai đoạn trên CSDL, ghi `job_stages`/`job_tasks`/`job_events`/`reports`; **còn thiếu**: OCR PDF (P10), parser sandbox `--network none`, `full_translation` (P9) |
+| Pipeline production | 🟡 | `visynth worker` chạy 7 giai đoạn trên CSDL theo từng task + điểm lưu, ghi `job_stages`/`job_tasks`/`job_events`/`reports`/`segments`/`knowledge_units`; **cổng glossary đã nối CSDL**: tài liệu ≥ 2000 từ dừng ở `awaiting_glossary`, `POST /jobs/{id}/glossary/confirm` chạy tiếp (chạy lại giai đoạn `glossary` bằng danh sách đã duyệt, **không gọi lại P1**), quá `glossary_review_deadline` thì `sweep_glossary_gates` tự xác nhận mục `confidence ≥ 0.7`; **còn thiếu**: OCR PDF (P10), parser sandbox `--network none`, `full_translation` (P9), DOCX/PDF export |
 | Pool | 🟡 | Router + 2 adapter + kho khoá mã hoá đã có (M0-W3) và dùng được qua `visynth worker --pool-config`; **còn thiếu**: nối sổ `llm_calls` vào CSDL mỗi lời gọi, Admin API HTTP cho `/admin/pool/*` |
 | Lõi văn phong & glossary | 🟡 | Vòng đời + kỷ luật bằng chứng đã có ở CLI (`visynth style …`, `visynth glossary …`); **còn thiếu**: bề mặt HTTP `/admin/style-cores*` và `/admin/glossary-review` |
 | Hạ tầng | 🔴 chưa | Khối VPS (compose, Caddy, sao lưu, giám sát) làm ngay trước khi lên staging |
 
-**Sai lệch có chủ ý (theo dõi để gỡ):** (a) xác thực M1 dùng email + mật khẩu (bảng `local_credentials`, scrypt) vì
+**Sai lệch có chủ ý (theo dõi để gỡ):** (0) cổng glossary lấy gợi ý từ P1 ngay trong giai đoạn `glossary` (đúng §6.4); khi người dùng xác nhận, giai đoạn này **chạy lại bằng danh sách đã duyệt và không gọi P1 lần nữa** — P1 chạy đúng một lần cho mỗi job; (a) xác thực M1 dùng email + mật khẩu (bảng `local_credentials`, scrypt) vì
 SPEC §20.2 chọn Google OAuth + email OTP — sẽ thay ở M2; (b) `/me` trả thêm `jobs`/`limits` so với `Me` trong
 OpenAPI (tiện cho giao diện, không phá hợp đồng); (c) `/auth/*` chưa có trong `openapi.yaml`, cần bổ sung trước M2.
 
