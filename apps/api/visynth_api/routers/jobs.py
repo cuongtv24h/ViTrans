@@ -40,6 +40,15 @@ STAGES = (
 TERMINAL = ("succeeded", "failed", "canceled", "expired")
 #: Giai đoạn worker thực sự chạy (4 giai đoạn còn lại được đánh `skipped` ở M1).
 PIPELINE_STAGES = ("profile", "glossary", "map", "consolidate", "write", "verify", "repair")
+#: Mức dịch đầy đủ đi đường P0 → glossary → P9 (§6.10) nên `translate` chạy thật, phần tổng hợp thì bỏ.
+TRANSLATE_STAGES = ("profile", "glossary", "translate")
+
+
+def pipeline_stages(level: str) -> tuple[str, ...]:
+    """Giai đoạn worker sẽ chạy với mức này (dùng để đánh `pending`/`skipped` cho `job_stages`)."""
+    return TRANSLATE_STAGES if level == "full_translation" else PIPELINE_STAGES
+
+
 PRICE_SQL = (
     "SELECT model, effective_from, input_per_mtok, output_per_mtok, cached_input_per_mtok FROM llm_prices "
     "WHERE effective_from <= current_date ORDER BY effective_from DESC, model LIMIT 1"
@@ -228,7 +237,7 @@ def create_job(
             for stage in STAGES:
                 cur.execute(
                     "INSERT INTO job_stages (job_id, stage, status) VALUES (%s, %s, %s)",
-                    (job["id"], stage, "pending" if stage in PIPELINE_STAGES else "skipped"),
+                    (job["id"], stage, "pending" if stage in pipeline_stages(body.level) else "skipped"),
                 )
             cur.execute(
                 "SELECT charge_credits(%s, %s, %s, %s) AS balance",

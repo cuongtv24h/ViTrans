@@ -30,8 +30,8 @@ from typing import Any
 from visynth.llm.base import RETRYABLE, LLMClient, LLMError
 from visynth.pipeline.assemble import finalize
 from visynth.pipeline.models import JobOptions
-from visynth.pipeline.stages import Pipeline
-from visynth.worker.store import STAGE_SEQUENCE, WorkerStore
+from visynth.pipeline.stages import DeferredError, Pipeline
+from visynth.worker.store import WorkerStore, stage_sequence
 
 log = logging.getLogger("visynth.worker")
 
@@ -55,6 +55,7 @@ STAGE_LABEL = {
     "write": "Viết báo cáo",
     "verify": "Kiểm chứng trích dẫn",
     "repair": "Sửa các đoạn lỗi",
+    "translate": "Dịch toàn văn",
 }
 #: Trường không bao giờ được đưa vào `job_events` (nội dung tài liệu/báo cáo).
 _PRIVATE_KEYS = frozenset({"text", "content", "markdown", "quote", "snippet", "statement_vi", "title_vi"})
@@ -129,26 +130,41 @@ class JobWorker:
         stage = task["stage"]
         try:
             outcome = self._run_stage(task, job, stage)
+        except (DeferredError, LLMError) as exc:
+            wait_s = _defer_wait_s(exc)
+            if wait_s is None:
+                return self._fail_task(task, job, exc)
+            # Pool chưa có chỗ (mọi deployment đang bận/hết hạn mức): hoãn task, KHÔNG tính lần thử (§6.10 bước 1).
+            self.store.defer(task["id"], wait_s)
+            log.info("hoãn task %s %.0fs: %s", task["id"], wait_s, exc)
+            return {"job_id": job["id"], "deferred": True, "wait_s": round(wait_s, 1)}
         except Exception as exc:  # noqa: BLE001 - mọi lỗi phải trở thành trạng thái task/job
-            retryable = _retryable(exc)
-            state = self.store.task_failed(task["id"], code=type(exc).__name__, message=str(exc), retryable=retryable)
-            log.warning("task %s lỗi (%s): %s", task["id"], state, exc)
-            if state == "failed":
-                remaining = self.store.tx_execute(
-                    "UPDATE job_tasks SET status = 'failed', error_code = 'job_failed', finished_at = now() "
-                    "WHERE job_id = %s AND status IN ('pending','running')",
-                    (job["id"],),
-                )
-                outcome = self.store.fail_job(job, code=type(exc).__name__, message=str(exc), retryable=retryable)
-                return {"job_id": job["id"], "failed": True, "tasks_failed": remaining, **outcome}
-            return {"job_id": job["id"], "retry": True, "state": state}
+            return self._fail_task(task, job, exc)
 
         stats = (
             self.store.one("SELECT tokens_in, tokens_out, cost_usd FROM job_tasks WHERE id = %s", (task["id"],)) or {}
         )
         if stats.get("cost_usd"):
             self.store.record_spend(float(stats["cost_usd"]))
+        return self._finish_task(task, job, stage, outcome, stats)
 
+    def _fail_task(self, task: dict, job: dict, exc: Exception) -> dict:
+        """Ghi lỗi task/job (thử lại được hay không) và trả kết quả cho `run_once`."""
+        retryable = _retryable(exc)
+        state = self.store.task_failed(task["id"], code=type(exc).__name__, message=str(exc), retryable=retryable)
+        log.warning("task %s lỗi (%s): %s", task["id"], state, exc)
+        if state == "failed":
+            remaining = self.store.tx_execute(
+                "UPDATE job_tasks SET status = 'failed', error_code = 'job_failed', finished_at = now() "
+                "WHERE job_id = %s AND status IN ('pending','running')",
+                (job["id"],),
+            )
+            outcome = self.store.fail_job(job, code=type(exc).__name__, message=str(exc), retryable=retryable)
+            return {"job_id": job["id"], "failed": True, "tasks_failed": remaining, **outcome}
+        return {"job_id": job["id"], "retry": True, "state": state}
+
+    def _finish_task(self, task: dict, job: dict, stage: str, outcome: dict, stats: dict) -> dict:
+        """Ghi kết quả một giai đoạn đã chạy xong (chờ glossary / xong job / còn giai đoạn sau)."""
         if outcome.get("awaiting_glossary"):
             self.store.task_succeeded(
                 task["id"], result={"awaiting_glossary": True, "candidates": outcome["candidates"]}
@@ -257,13 +273,17 @@ class JobWorker:
             # Tài liệu ngắn / người dùng bỏ qua cổng: ghi lại các mục đã tự xác nhận.
             self.store.save_job_glossary(str(job["id"]), pipeline.glossary, status="confirmed")
 
-        if stage != STAGE_SEQUENCE[-1]:
+        if stage != stage_sequence(str(job["level"]))[-1]:
             # Huỷ giữa chừng: không lưu điểm lưu để lần chạy sau vẫn dừng đúng chỗ.
             if not self.store.scalar("SELECT cancel_requested FROM jobs WHERE id = %s", (job["id"],)):
                 self.store.save_checkpoint(job["id"], stage, pipeline.as_state())
             return {"finished": False, "stage": stage}
 
         result = finalize(pipeline)
+        if str(job["level"]) == "full_translation":
+            from visynth.pipeline.run import build_translation_markdown
+
+            result.markdown = build_translation_markdown(pipeline, result, pipeline.ext)
         shadow_usd = self._cost_usd(result.stats_llm.tokens_in, result.stats_llm.tokens_out)
         self.store.tx_execute("UPDATE jobs SET actual_shadow_usd = %s WHERE id = %s", (shadow_usd, job["id"]))
         report_id = self.store.save_report(job, result, pipeline.segment_rows())
@@ -290,7 +310,7 @@ class JobWorker:
 
     def _metrics(self, pipeline: Pipeline, stage: str) -> dict:
         result = pipeline.result
-        return {
+        metrics = {
             "stage": stage,
             "units": len(result.units),
             "sections": len(result.sections),
@@ -299,6 +319,16 @@ class JobWorker:
             "tokens_in": result.stats_llm.tokens_in,
             "tokens_out": result.stats_llm.tokens_out,
         }
+        if str(getattr(result, "level", "")) == "full_translation":
+            # §6.10: số đo của giai đoạn dịch nằm trong `job_stages.metrics` để đối chiếu hạng chất lượng.
+            metrics.update(result.stats_llm.extra.get("translate") or {})
+            metrics["translation_items"] = len(getattr(result, "translation_items", []) or [])
+            metrics["flagged_ratio"] = round(
+                sum(1 for i in getattr(result, "translation_items", []) or [] if i.flagged)
+                / max(1, len(getattr(result, "translation_items", []) or [])),
+                4,
+            )
+        return metrics
 
     def _flush_events(self, job_id: str, events: list[dict], emitted: int, *, stage: str | None = None) -> int:
         """Đẩy sự kiện mới của pipeline vào `job_events` (đã che nội dung tài liệu)."""
@@ -319,6 +349,15 @@ class JobWorker:
                 progress=self.store.progress(job_id),
             )
         return len(events)
+
+
+def _defer_wait_s(exc: Exception) -> float | None:
+    """Số giây cần hoãn nếu lỗi là "pool chưa có chỗ"; `None` nghĩa là lỗi thật."""
+    if isinstance(exc, DeferredError):
+        return exc.wait_s
+    if isinstance(exc, LLMError) and exc.outcome.kind == "deferred":
+        return float(exc.outcome.retry_after_s or 60.0)
+    return None
 
 
 def _retryable(exc: Exception) -> bool:

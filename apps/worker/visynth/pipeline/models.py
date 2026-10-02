@@ -43,6 +43,7 @@ class LLMStats:
             "tokens_out": self.tokens_out,
             "retries": self.retries,
             "by_prompt": dict(self.by_prompt),
+            "extra": dict(self.extra),
         }
 
     @classmethod
@@ -53,7 +54,11 @@ class LLMStats:
         stats.tokens_out = int(d.get("tokens_out") or 0)
         stats.retries = int(d.get("retries") or 0)
         stats.by_prompt = dict(d.get("by_prompt") or {})
+        stats.extra = dict(d.get("extra") or {})
         return stats
+
+    #: Số liệu riêng của từng giai đoạn (ví dụ `translate`: số đoạn bị đánh cờ) — đi vào `job_stages.metrics`.
+    extra: dict = field(default_factory=dict)
 
     def add(self, prompt_id: str, tokens_in: int, tokens_out: int) -> None:
         self.calls += 1
@@ -270,6 +275,8 @@ class JobResult:
     warnings: list[str] = field(default_factory=list)
     stats_llm: LLMStats = field(default_factory=LLMStats)
     metrics: dict = field(default_factory=dict)
+    #: Mức `full_translation`: kết quả P9 căn 1:1 theo pid (rỗng với các mức tổng hợp).
+    translation_items: list = field(default_factory=list)
 
     def active_units(self) -> list[Unit]:
         return [u for u in self.units if u.state == "active"]

@@ -55,7 +55,7 @@ from visynth.prompts import (
     neutral_style_core,
     render_prompt,
 )
-from visynth.segment import DEFAULT_TARGET_MAP, Segment, segment_extraction
+from visynth.segment import DEFAULT_TARGET_MAP, DEFAULT_TARGET_TRANSLATE, Segment, segment_extraction
 from visynth.structured import SchemaError, SchemaStore
 
 #: Nhu cầu tối thiểu của từng profile model (SPEC §17.6) — pool thật thay bằng `pool_config`.
@@ -85,6 +85,17 @@ class PipelineError(RuntimeError):
     def __init__(self, message: str, *, retryable: bool = False) -> None:
         super().__init__(message)
         self.retryable = retryable
+
+
+class DeferredError(PipelineError):
+    """Pool chưa có chỗ cho lời gọi này (SPEC §6.10 bước 1).
+
+    Khác lỗi thường: worker **hoãn** task (`defer_task`) và không tính đây là một lần thử thất bại.
+    """
+
+    def __init__(self, message: str, *, wait_s: float = 60.0) -> None:
+        super().__init__(message, retryable=True)
+        self.wait_s = float(wait_s)
 
 
 class Pipeline:
@@ -255,6 +266,10 @@ class Pipeline:
             resp = self.client.complete(req)
         except LLMError as exc:
             self.result.emit("warning", code="llm_error", prompt=prompt.prompt_id, outcome_kind=exc.outcome.kind)
+            if exc.outcome.kind == "deferred":
+                raise DeferredError(
+                    f"{prompt.prompt_id}: {exc}", wait_s=float(exc.outcome.retry_after_s or 60.0)
+                ) from exc
             raise PipelineError(f"{prompt.prompt_id}: {exc}", retryable=exc.outcome.kind in RETRYABLE) from exc
         self.result.stats_llm.add(prompt.prompt_id, resp.outcome.tokens_in, resp.outcome.tokens_out)
         if expected is None:
@@ -284,6 +299,130 @@ class Pipeline:
 
     # ------------------------------------------------------------------ P0 — hồ sơ tài liệu
 
+    # ------------------------------------------------------------------ P9 — dịch đầy đủ (level=full_translation)
+
+    def stage_translate(self) -> list:
+        """Dịch TỪNG segment bằng P9, kiểm tra tất định, chạy lại một lần nếu sai (SPEC §6.10).
+
+        Trả danh sách `translate.Item` theo thứ tự pid nguồn. Lưu ý: ngưỡng và phép kiểm nằm ở
+        `visynth.pipeline.translate` để `tests/` đối chiếu được với bộ tham chiếu.
+        """
+        from visynth.pipeline.translate import (
+            RATIO_MAX,
+            RATIO_MIN,
+            check_chunk,
+            merge_items,
+        )
+
+        seg_rec = self.profile.get("recommended_segmentation") or {}
+        target = seg_rec.get("target_tokens_translate") or DEFAULT_TARGET_TRANSLATE
+        strategy = seg_rec.get("strategy") or "by_headings"
+        self.segments = segment_extraction(self.ext, mode="translate", target_tokens=target, strategy=strategy)
+        source_lang = (self.ext.language_code or self.profile.get("language") or "en").lower()
+        same_language = source_lang.startswith("vi")
+        items_all: list = []
+        flagged_rounds = 0
+        for seg in self.segments:
+            glossary = filter_glossary(self.glossary, seg.render())
+            first_use = self._first_use_terms(seg)
+            base_vars = {
+                "segment_id": seg.segment_id,
+                "profile_json": self.profile,
+                "glossary_json": glossary,
+                "first_use_terms": sorted(first_use),
+                "context_before": seg.render_context() or "(không có)",
+                "segment_text": seg.render(),
+                "style_core": self._style(),
+            }
+            attempts = 0
+            feedback = ""
+            items: list = []
+            problems: list[str] = []
+            while True:
+                attempts += 1
+                try:
+                    data, _ = self.call(
+                        "P9",
+                        base_vars,
+                        append=feedback,
+                        schema="translation_chunk.schema.json",
+                        what="bản dịch",
+                    )
+                except _SchemaFailure as exc:
+                    if attempts > 1:
+                        self.result.warnings.append(f"translate_schema_failed:{seg.segment_id}")
+                        break
+                    self.result.stats_llm.retries += 1
+                    feedback = (
+                        "Your previous output was rejected. Fix exactly these problems and return valid JSON:\n"
+                        + "\n".join(f"- {e}" for e in exc.error.errors)
+                    )
+                    continue
+                terms = {str(g["source_term"]).casefold() for g in glossary}
+                items, problems = check_chunk(
+                    seg,
+                    data,
+                    [e for e in self.glossary_entries if e.source_term.casefold() in terms],
+                    first_use_terms=first_use,
+                    source_lang="vi" if same_language else source_lang,
+                )
+                if not problems:
+                    break
+                if attempts <= 1:
+                    self.result.stats_llm.retries += 1
+                    flagged_rounds += 1
+                    feedback = self._translate_feedback(problems, RATIO_MIN, RATIO_MAX)
+                    previous = items
+                    continue
+                # Chạy lại vẫn lỗi: giữ bản dịch tốt nhất hiện có và đánh cờ để người đọc biết
+                items = merge_items(previous, items)
+                self.result.warnings.append(f"translate_flagged:{seg.segment_id}")
+                break
+            items_all.extend(items)
+            self.result.translation_items = items_all
+        flagged = sum(1 for item in items_all if item.flagged)
+        ratio = flagged / len(items_all) if items_all else 0.0
+        self.result.stats_llm.extra["translate"] = {
+            "segments": len(self.segments),
+            "items": len(items_all),
+            "flagged": flagged,
+            "retried_segments": flagged_rounds,
+            "flagged_ratio": round(ratio, 4),
+        }
+        self.result.emit(
+            "stage_done",
+            stage="translate",
+            segments=len(self.segments),
+            items=len(items_all),
+            flagged=flagged,
+        )
+        return items_all
+
+    def _first_use_terms(self, seg) -> set[str]:
+        """Thuật ngữ `keep_original` xuất hiện LẦN ĐẦU ở segment này (tất định, theo thứ tự đoạn)."""
+        seen: set[str] = set(getattr(self, "_first_use_seen", set()))
+        out: set[str] = set()
+        text = seg.render().casefold()
+        for entry in self.glossary:
+            if not entry.get("keep_original"):
+                continue
+            if entry.get("source_term", "").casefold() in text and entry["source_term"] not in seen:
+                out.add(entry["source_term"])
+        self._first_use_seen = seen | out
+        return out
+
+    def _translate_feedback(self, problems: list[str], ratio_min: float, ratio_max: float) -> str:
+        header = [
+            "The previous translation failed deterministic checks. Fix them and return the FULL JSON again",
+            "(all paragraph ids of this segment, each exactly once, no extra ids):",
+        ]
+        rules = [
+            f"- length ratio len(vi)/len(src) must be within [{ratio_min}, {ratio_max}] for paragraphs of 40+ characters;",
+            "- keep every number exactly as it appears in the source (do not convert, round or invent);",
+            "- use the glossary target terms; write natural Vietnamese with full diacritics.",
+        ]
+        return "\n".join([*header, *[f"- {p}" for p in problems[:20]], "", *rules])
+
     def stage_profile(self) -> dict:
         sample = self._sample_paragraphs()
         stats = {
@@ -304,6 +443,8 @@ class Pipeline:
         }
         try:
             profile, _ = self.call_retry_once("P0", variables, "doc_profile.schema.json", what="hồ sơ tài liệu")
+        except DeferredError:
+            raise  # pool hết chỗ: hoãn task rồi chạy lại, KHÔNG hạ cấp xuống hồ sơ bảo thủ
         except (
             Exception
         ) as exc:  # schema sai cả hai lần -> dùng hồ sơ bảo thủ (SPEC §6.13: còn cách xử lý theo giai đoạn)
@@ -945,6 +1086,8 @@ class Pipeline:
                 }
                 try:
                     data, _ = self.call_retry_once("P7", variables, "repair_output.schema.json", what=f"sửa {s.id}")
+                except DeferredError:
+                    raise  # pool hết chỗ: để worker hoãn cả task, không bỏ qua mục nào
                 except Exception as exc:
                     self.result.warnings.append(f"repair_failed:{s.id}")
                     self.result.emit("warning", code="repair_failed", section=s.id, detail=str(exc)[:160])
@@ -1043,6 +1186,8 @@ class Pipeline:
                     data, _ = self.call_retry_once(
                         "P5", payload, "faithfulness.schema.json", what=f"trung thực lại {section.id}"
                     )
+                except DeferredError:
+                    raise  # pool hết chỗ: hoãn task thay vì bỏ qua bước kiểm tra lại
                 except Exception:
                     continue
                 for r in data["results"]:
@@ -1063,6 +1208,29 @@ class Pipeline:
     # ------------------------------------------------------------------ D9 + thống kê (dùng ở assemble)
 
     def metrics(self) -> dict:
+        if self.result.level == "full_translation" and self.result.translation_items:
+            # Mức dịch đầy đủ không có unit/khối để tính coverage — thay bằng tỷ lệ đoạn bị đánh cờ
+            # (≥ 15% ⇒ hạng C, hoàn 50% tín dụng theo §6.10).
+            from visynth.pipeline.translate import FLAGGED_GRADE_C_RATIO, RATIO_MAX, RATIO_MIN
+
+            items = self.result.translation_items
+            flagged = sum(1 for item in items if item.flagged)
+            ratio = flagged / len(items) if items else 0.0
+            grade = "C" if ratio >= FLAGGED_GRADE_C_RATIO else "A"
+            return {
+                "coverage_core": 1.0 if not flagged else round(1 - ratio, 4),
+                "faithfulness_rate": round(1 - ratio, 4),
+                "unresolved_blocks": flagged,
+                "blocks_total": len(items),
+                "blocks_removed": 0,
+                "units_total": 0,
+                "units_core": 0,
+                "units_unverified": 0,
+                "grade": grade,
+                "translation_items": len(items),
+                "translation_flagged": flagged,
+                "ratio_bounds": [RATIO_MIN, RATIO_MAX],
+            }
         core = [u for u in self.result.units if u.importance == "core" and u.state == "active"]
         blocks = [b for b in self.result.blocks if not b.removed]
         cited = {c for b in blocks for c in b.cites}

@@ -81,9 +81,15 @@ def finalize(pipeline) -> JobResult:
     for seg in pipeline.segments:
         labels.update(getattr(seg, "labels", {}).values())
     stats = build_stats(result, metrics, source_words=pipeline.ext.word_count, labels=dict(labels))
-    pipeline._scope_text = scope_note(pipeline, stats, core_topics(result), condensed_kinds(result))
-    cites = _number_citations(pipeline)
-    result.markdown = _build_markdown(pipeline, stats, cites)
+    if result.level == "full_translation":
+        # Mức dịch đầy đủ KHÔNG gọi P8 và không dựng báo cáo tổng hợp: Markdown của nó do
+        # `translate.build_markdown` ghép (bản dịch căn 1:1 + ghi chú kiểm tra), thay ở `run.run_document`.
+        result.markdown = ""
+        pipeline._scope_text = ""
+    else:
+        pipeline._scope_text = scope_note(pipeline, stats, core_topics(result), condensed_kinds(result))
+        cites = _number_citations(pipeline)
+        result.markdown = _build_markdown(pipeline, stats, cites)
     # P8 cũng là một lời gọi LLM — cập nhật sổ sau khi gọi xong
     stats["report_words"] = len(result.markdown.split())
     stats["llm_calls"] = result.stats_llm.calls

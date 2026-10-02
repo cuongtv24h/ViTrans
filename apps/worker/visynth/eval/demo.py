@@ -30,7 +30,7 @@ from visynth.llm.fake import FakeLLMClient, FakeReply
 #: Tài liệu mẫu trong repo (từ `apps/worker/visynth/eval/demo.py` lên gốc repo rồi vào `eval/fixtures`).
 DEMO_FIXTURE = Path(__file__).resolve().parents[4] / "eval" / "fixtures" / "demo_lecture.txt"
 
-TAMPER_MODES = ("number", "glossary", "fabricated", "plan", "quote")
+TAMPER_MODES = ("number", "glossary", "fabricated", "plan", "quote", "untranslated")
 
 # ------------------------------------------------------------------ dữ liệu suy ra từ tài liệu
 
@@ -261,6 +261,7 @@ class DemoProducer:
         self.evidence = _evidence_of(self.ext)
         self.seg_of = self._segments()
         self.unit_id = self._assign_unit_ids()
+        self.named_terms: set[str] = set()  # thuật ngữ keep_original đã ghi dạng 'đích (nguồn)'
         self.reported: set[str] = set()  # khối đã bị P5 đánh dấu (lần kiểm tra lại phải sạch)
         self.verdicts: dict[str, str] = {}  # block_id -> phán quyết P5 gần nhất
 
@@ -545,6 +546,60 @@ class DemoProducer:
         )
         return FakeReply(text=note)
 
+    def _p9(self, request: LLMRequest) -> FakeReply:
+        """P9 — dịch đầy đủ.
+
+        Tài liệu mẫu đã là tiếng Việt, nên "bản dịch" là chính nguồn **đã áp glossary đã chốt**:
+        thay `source_term` (và các `forbidden_variants`) bằng `target_term`, mục `keep_original`
+        lần dùng đầu ghi dạng `đích (nguồn)`. Nhờ vậy mọi phép kiểm tất định trong
+        `pipeline.translate` đều chạy thật trên kết quả, không phải kịch bản rỗng.
+
+        Tamper `untranslated` bỏ bước áp glossary ⇒ dựng cảnh báo "nghi chưa dịch"/"thuật ngữ nguồn
+        chưa dịch" để kiểm đường chạy lại rồi đánh cờ của giai đoạn `translate`.
+        """
+        seg_id = _tag(request.user, "segment_id").strip()
+        segment = _tag(request.user, "segment")
+        glossary: list[dict] = []
+        raw = _tag(request.user, "glossary").strip()
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                glossary = parsed if isinstance(parsed, list) else []
+            except json.JSONDecodeError:
+                glossary = []
+        items: list[dict[str, Any]] = []
+        for line in segment.split("\n\n"):
+            m = re.match(r"\[([^\]]+)\]\s*(.*)", line.strip(), re.S)
+            if not m:
+                continue
+            vi = m.group(2).strip()
+            if self.tamper != "untranslated":
+                vi = self._apply_glossary(vi, glossary)
+            items.append({"pid": m.group(1), "vi": vi})
+        return FakeReply.json({"segment_id": seg_id, "items": items, "notes": []})
+
+    def _apply_glossary(self, text: str, glossary: list[dict]) -> str:
+        """Thay thuật ngữ nguồn bằng thuật ngữ đích đã chốt (tất định, không gọi model)."""
+        out = text
+        for entry in glossary:
+            target = str(entry.get("target_term") or "").strip()
+            source = str(entry.get("source_term") or "").strip()
+            if not target or not source:
+                continue
+            flags = 0 if entry.get("case_sensitive") else re.IGNORECASE
+            forms = [source, *(entry.get("forbidden_variants") or [])]
+            for form in forms:
+                form = str(form).strip()
+                if not form or form.casefold() == target.casefold():
+                    continue
+                replacement = target
+                if entry.get("keep_original") and source.casefold() not in self.named_terms:
+                    # mục keep_original: lần dùng đầu phải là 'đích (nguồn)' (SPEC §6.6)
+                    self.named_terms.add(source.casefold())
+                    replacement = f"{target} ({source})"
+                out = re.sub(rf"(?<!\w){re.escape(form)}(?!\w)", replacement, out, flags=flags)
+        return out
+
     def __call__(self, request: LLMRequest) -> FakeReply:
         handlers = {
             "P0": self._p0,
@@ -556,6 +611,7 @@ class DemoProducer:
             "P6": self._p6,
             "P7": self._p7,
             "P8": self._p8,
+            "P9": self._p9,
         }
         fn = handlers.get(request.prompt_id)
         if fn is None:  # pragma: no cover - M0 chỉ có P0–P8

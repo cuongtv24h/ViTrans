@@ -18,6 +18,10 @@ from visynth.pipeline.stages import Pipeline
 
 STAGE_SEQUENCE = ("profile", "glossary", "map", "consolidate", "write", "verify", "repair")
 
+#: Mức dịch đầy đủ đi đường thẳng: P0 → glossary → P9 (`translate`) → ghép bản dịch (§6.10, §6.11).
+#: Điểm chung với đường tổng hợp: P0 hồ sơ tài liệu, cổng glossary chờ người duyệt, rồi `assemble`.
+TRANSLATE_SEQUENCE = ("profile", "glossary", "translate")
+
 
 def run_document(
     extraction: Extraction,
@@ -28,7 +32,7 @@ def run_document(
     schemas_dir: str | os.PathLike[str] | None = None,
     seed: int = 7,
 ) -> JobResult:
-    """Chạy P0→P8 rồi dựng Markdown (P8 = scope note + assemble)."""
+    """Chạy P0→P8 (hoặc P0→P9 cho `full_translation`) rồi dựng Markdown."""
     pipeline = Pipeline(extraction, client, options, prompts_dir=prompts_dir, schemas_dir=schemas_dir, seed=seed)
     pipeline.result.emit(
         "job_started",
@@ -38,9 +42,27 @@ def run_document(
         paragraphs=len(extraction.paragraphs),
         words=extraction.word_count,
     )
-    for stage in STAGE_SEQUENCE:
+    sequence = TRANSLATE_SEQUENCE if pipeline.options.level == "full_translation" else STAGE_SEQUENCE
+    for stage in sequence:
         getattr(pipeline, f"stage_{stage}")()
-    return finalize(pipeline)
+    result = finalize(pipeline)
+    if pipeline.options.level == "full_translation":
+        build_translation_markdown(pipeline, result, extraction)
+    return result
+
+
+def build_translation_markdown(pipeline, result, extraction) -> str:
+    """Ghép Markdown bản dịch đầy đủ (song ngữ nếu job bật) và ghi số đo vào `result.stats`."""
+    from visynth.pipeline.translate import build_markdown
+
+    # Xuất SONG NGỮ (`?bilingual=true`) là việc của API ở M2; ở đây mặc định là bản dịch thuần.
+    result.markdown = build_markdown(
+        extraction, pipeline.segments, {item.pid: item for item in result.translation_items}
+    )
+    result.stats["report_words"] = len(result.markdown.split())
+    result.stats["translation_items"] = len(result.translation_items)
+    result.stats["translation_flagged"] = sum(1 for item in result.translation_items if item.flagged)
+    return result.markdown
 
 
 def run_job(

@@ -1192,13 +1192,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out")
     p.set_defaults(func=cmd_estimate)
 
-    p = sub.add_parser("run", help="chạy trọn P0–P8 trên kịch bản giả (M0-W2)")
+    p = sub.add_parser("run", help="chạy trọn P0–P8 (hoặc P0–P9 với full_translation) trên kịch bản giả")
     p.add_argument("path", nargs="?", help="bỏ trống hoặc dùng tệp mẫu (kịch bản giả chỉ có tài liệu demo)")
     p.add_argument("--demo", action="store_true", help="chạy tài liệu demo có sẵn")
     p.add_argument("--tamper", choices=TAMPER_MODES, default=None, help="biến thể phá hoại để thử P7")
-    p.add_argument(
-        "--level", choices=["detailed_synthesis", "deep_synthesis", "executive_brief"], default="deep_synthesis"
-    )
+    p.add_argument("--level", choices=list(LEVELS), default="deep_synthesis")
     p.add_argument("--seed", type=int, default=7)
     p.add_argument("--pool-config", help="chạy tài liệu thật qua LLM Pool (M0-W3) với tệp pool_config JSON này")
     p.add_argument("--ledger", help="ghi sổ llm_calls ra JSONL (mặc định: chỉ giữ trong bộ nhớ)")

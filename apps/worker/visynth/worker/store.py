@@ -25,8 +25,17 @@ def to_jsonb(value: Any) -> Jsonb:
     return Jsonb(value, dumps=lambda v: json.dumps(v, ensure_ascii=False, default=str))
 
 
-#: Thứ tự giai đoạn worker chạy (khớp `Pipeline.STAGE_SEQUENCE`).
+#: Thứ tự giai đoạn worker chạy cho các mức tổng hợp (khớp `pipeline.run.STAGE_SEQUENCE`).
 STAGE_SEQUENCE = ("profile", "glossary", "map", "consolidate", "write", "verify", "repair")
+#: Mức `full_translation` đi đường dịch trực tiếp: P0 → cổng glossary → P9 (`translate`).
+TRANSLATE_SEQUENCE = ("profile", "glossary", "translate")
+
+
+def stage_sequence(level: str) -> tuple[str, ...]:
+    """Trình tự giai đoạn của một mức (`full_translation` không chạy map/write/verify/repair)."""
+    return TRANSLATE_SEQUENCE if level == "full_translation" else STAGE_SEQUENCE
+
+
 #: Tiến độ hiển thị sau khi xong mỗi giai đoạn (%).
 STAGE_PROGRESS = {
     "profile": 8,
@@ -113,7 +122,7 @@ class WorkerStore:
                     "UPDATE jobs SET status = 'running', started_at = COALESCE(started_at, now()) WHERE id = %s",
                     (job["id"],),
                 )
-                for stage in STAGE_SEQUENCE:
+                for stage in stage_sequence(str(job["level"])):
                     cur.execute(
                         """INSERT INTO job_tasks (job_id, stage, task_key, max_attempts)
                            VALUES (%s, %s, %s, 3) ON CONFLICT (job_id, stage, task_key) DO NOTHING""",
@@ -136,12 +145,18 @@ class WorkerStore:
         return dict(row["state"]) if row and row["state"] else None
 
     def latest_checkpoint_before(self, job_id: str, stage: str) -> tuple[str | None, dict | None]:
-        """Điểm lưu gần nhất TRƯỚC giai đoạn `stage` (dùng khi task bị chạy lại)."""
+        """Điểm lưu gần nhất TRƯỚC giai đoạn `stage` (dùng khi task bị chạy lại).
+
+        Thứ tự lấy theo MỨC của job: `full_translation` không có giai đoạn `map`…`repair` nên
+        `translate` phải khôi phục đúng điểm lưu của `glossary`.
+        """
+        level = str(self.scalar("SELECT level FROM jobs WHERE id = %s", (job_id,)) or "")
+        order = list(stage_sequence(level))
         row = self.one(
             """SELECT stage, state FROM job_checkpoints
                 WHERE job_id = %s AND array_position(%s::text[], stage) < array_position(%s::text[], %s::text)
                 ORDER BY array_position(%s::text[], stage) DESC LIMIT 1""",
-            (job_id, list(STAGE_SEQUENCE), list(STAGE_SEQUENCE), stage, list(STAGE_SEQUENCE)),
+            (job_id, order, order, stage, order),
         )
         return (row["stage"], dict(row["state"])) if row else (None, None)
 
@@ -273,9 +288,14 @@ class WorkerStore:
     def heartbeat(self, task_id: int) -> None:
         self.tx_execute("UPDATE job_tasks SET heartbeat_at = now() WHERE id = %s", (task_id,))
 
-    def defer(self, task_id: int, until: str) -> bool:
-        """Hoãn task (chờ deployment rảnh) — không tính là lần thử thất bại."""
-        return bool(self.scalar("SELECT defer_task(%s, %s::timestamptz)", (task_id, until)))
+    def defer(self, task_id: int, seconds: float) -> bool:
+        """Hoãn task trong `seconds` giây (chờ deployment rảnh) — KHÔNG tính là lần thử thất bại.
+
+        Hàm SQL `defer_task` trả task về `pending` với `run_after` mới và `attempt - 1` (§6.10 bước 1).
+        """
+        return bool(
+            self.scalar("SELECT defer_task(%s, now() + make_interval(secs => %s))", (task_id, max(1.0, float(seconds))))
+        )
 
     def tx_execute(self, sql: str, params: tuple | dict = ()) -> int:
         with self.tx() as cur:
@@ -469,7 +489,12 @@ class WorkerStore:
 
     # ------------------------------------------------------------------ kết thúc
     def save_report(self, job: dict, result, segments: list[dict] | None = None) -> str:
-        """Ghi `reports`/`report_sections`/`report_blocks` (+ `segments`, `knowledge_units`) — trả `report_id`."""
+        """Ghi `reports`/`report_sections`/`report_blocks` (+ `segments`, `knowledge_units`) — trả `report_id`.
+
+        Mức `full_translation` ghi thêm `translation_items` (mỗi pid đúng một dòng, §6.10).
+        """
+        for item in getattr(result, "translation_items", []) or []:
+            self.save_translation_item(job["id"], item)
         with self.tx() as cur:
             for row in segments or []:
                 cur.execute(
@@ -564,6 +589,16 @@ class WorkerStore:
                         ),
                     )
         return report_id
+
+    def save_translation_item(self, job_id: str, item) -> None:
+        """Ghi một dòng `translation_items` (upsert theo `(job_id, pid)`)."""
+        self.tx_execute(
+            """INSERT INTO translation_items (job_id, pid, vi, note_vi, flagged)
+               VALUES (%s, %s, %s, %s, %s)
+               ON CONFLICT (job_id, pid) DO UPDATE SET
+                    vi = EXCLUDED.vi, note_vi = EXCLUDED.note_vi, flagged = EXCLUDED.flagged""",
+            (job_id, item.pid, item.vi, item.note_vi, bool(item.flagged)),
+        )
 
     def finish_job(self, job: dict, result) -> dict:
         """Đóng job: `succeeded` (hoặc `failed` nếu hạng C mà không có nội dung), hoàn tín dụng khi cần."""
