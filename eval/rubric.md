@@ -77,3 +77,7 @@ python eval/score.py --run eval/runs/2026-10-05/<doc_id>/run.json \
 # 4) kiểm tra bộ golden còn hợp lệ và đủ độ phủ §16.1
 python eval/score.py --validate-golden
 ```
+
+Trước khi chốt một thay đổi model/prompt: `python eval/bakeoff.py --configs … --golden … --out …` (§16.4) để
+chọn cấu hình **rẻ nhất đạt ngưỡng**, rồi `python eval/compare_baseline.py` (§16.3) so với lần chạy trước.
+Cấu hình nào có người kiểm khác họ người viết thì ghi lại — đó là biến thể §16.4 yêu cầu thử riêng.

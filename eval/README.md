@@ -10,6 +10,7 @@ Chạy thật (có LLM) hay chạy kịch bản giả (`--demo`) đều cho cùn
 | `score.py` | Bộ chấm tự động §16.2/§2.2: `coverage_core`, `faithfulness_rate`, `fabricated_remaining`, `terminology_consistency`, trap facts, `unresolved_numbers`, `length_ratio`, `cost_usd` → JSON + Markdown kèm kết luận ĐẠT/KHÔNG |
 | `rubric.md` | Thang chấm người 1–5 (§16.2), ngưỡng §2.2 và hằng số chặn hồi quy §16.3 |
 | `compare_baseline.py` | So hai lần chạy theo §16.3 và **chặn** khi coverage −0.03, faithfulness −0.02, trap fact mới, chi phí +20%, p95 thời gian +30% (mã thoát 1 khi bị chặn) |
+| `bakeoff.py` | Bake-off §16.4: chạy N cấu hình `pool_config` trên cùng tập tài liệu, chấm từng lần, **chọn cấu hình rẻ nhất đạt ngưỡng**, kiểm đa dạng người viết/người kiểm, nhập điểm `probe` cạnh cấu hình |
 | `runs/<ngày>/<doc_id>/` | Kết quả từng lần: `run.json` (artifact của pipeline), `report.md`, `score.json`, `score.md` — dùng làm baseline để so |
 | `fixtures/demo_lecture.txt` | Tài liệu mẫu do nhóm tự viết (kiểm tra luồng, **không phải** kết quả chất lượng) |
 | `demo_report.md` | Báo cáo sinh bởi `visynth run --demo` — chỉ để xem luồng |
@@ -33,6 +34,26 @@ So với baseline trước khi phát hành thay đổi prompt/model/pool (§16.3
 ```bash
 python eval/compare_baseline.py --baseline eval/runs/2026-10-05 --candidate eval/runs/2026-11-01 \
     --markdown eval/runs/so-sanh.md        # mã thoát 1 = có chỉ số chặn
+```
+
+Bake-off chọn cấu hình model (§16.4) — mỗi cấu hình một `pool_config.json`, kết quả gọn trong một thư mục:
+
+```bash
+python eval/bakeoff.py --configs pool_config.a.json pool_config.b.json pool_config.c.json \
+    --golden eval/golden --out eval/runs/bakeoff-2026-10-05      # mã thoát 1 = không cấu hình nào đạt
+python eval/bakeoff.py … --demo                                  # thử đường ống, không tốn token
+```
+
+Báo cáo ghi rõ: coverage/faithfulness min và trung bình, trap fact, **chi phí thật**, thời gian, và người kiểm
+của từng cấu hình có **khác họ model** người viết không. Nếu cạnh `pool_config.x.json` có `pool_config.x.probe.json`
+(`visynth pool probe --out …`) thì điểm `json`/`vi_write`/`tokenizer_factor` đo được hiện luôn trong báo cáo.
+
+Nhập số đo vào `pool_config` sau khi tự duyệt (§16.4b/c/d) — mặc định chỉ xem trước:
+
+```bash
+visynth pool apply-probe --config pool_config.json --probe eval/runs/probe.json \
+    --limits eval/runs/limits.json        # in ra từng thay đổi, KHÔNG ghi
+visynth pool apply-probe … --write        # ghi sau khi cấu hình mới đã qua validate_config
 ```
 
 Kết quả mẫu (tài liệu demo, kịch bản giả): `coverage_core 1.00`, `faithfulness 1.00`, trap facts 0 lỗi,

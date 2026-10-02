@@ -299,6 +299,8 @@ Công cụ M0: `eval/compare_baseline.py --baseline … --candidate …` so hai 
 
 3 cấu hình profile × 5 tài liệu; chấm mù theo cặp so với bản tham chiếu; chọn cấu hình **rẻ nhất đạt ngưỡng** §2.2. Thử riêng một `verifier` thuộc họ model khác `writer` để xem có giảm lỗi tương quan không. Với pool, bài này gồm thêm: (a) chạy bài kiểm định (`probe`, §17.9) cho từng deployment ứng viên và ghi điểm `json`, `vi_write`, `long_context`; (b) đo hạn mức thật (đọc bảng điều khiển, đối chiếu với lỗi 429) và nhập vào `limits`; (c) đo `tokenizer_factor` thật; (d) chạy `declare` + `probe` cho các khoá thật, ghi ngày kiểm tra vào `notes` của nhóm (§17.14); (e) khởi tạo Lõi văn phong và glossary cho lĩnh vực đầu tiên bằng quy trình §19.9 rồi chạy golden set. Ghi kết quả vào `eval/` và cập nhật `pool_config` (`quality`, `limits`, `tiers`).
 
+Công cụ M0: `eval/bakeoff.py --configs … --golden …` chạy N cấu hình trên cùng tập tài liệu, chấm bằng `eval/score.py` rồi chọn cấu hình **rẻ nhất đạt ngưỡng**; báo cáo kèm họ model của người viết/người kiểm (cảnh báo khi cùng họ) và điểm `probe` nếu có `*.probe.json` cạnh cấu hình. Việc nhập số đo vào cấu hình làm bằng `visynth pool apply-probe --config … --probe … [--limits …]` — mặc định chỉ xem trước, chỉ ghi khi cấu hình mới đã qua `validate_config`.
+
 ### 16.5 Vòng phản hồi trực tuyến
 
 Chấm sao và "báo lỗi đoạn" (`feedback`); phân loại hằng tuần; ca đáng giá đưa vào golden set; theo dõi phân bố hạng A/B/C và tỷ lệ báo lỗi theo mức và loại tài liệu.

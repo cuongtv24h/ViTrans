@@ -10,9 +10,10 @@
   sổ `llm_calls`; **217 test**, trong đó 26 test chốt định dạng HTTP của hai adapter qua máy chủ giả cục bộ).
   Việc còn lại của W3 cần **mạng tới nhà cung cấp** (sandbox phát triển không ra được Internet): chạy
   `pool models` → sửa id model → `pool probe` để đo hạn mức/`tokenizer_factor` → báo cáo `deep_synthesis` đầu tiên.
-- **M0 — W4 đang chạy:** hạ tầng đo trong `eval/` — bộ chấm tự động `eval/score.py` (§2.2/§16.2, chạy offline),
-  định dạng golden `eval/golden/schema.json`, thang chấm người `eval/rubric.md`; còn thiếu **tài liệu thật** và
-  bake-off/hiệu chỉnh chi phí. Xem [`eval/README.md`](eval/README.md).
+- **M0 — W4 đang chạy (3/4):** hạ tầng đo trong `eval/` — bộ chấm tự động `eval/score.py` (§2.2/§16.2, chạy offline),
+  `eval/compare_baseline.py` chặn hồi quy §16.3, `eval/bakeoff.py` chọn cấu hình rẻ nhất đạt ngưỡng §16.4,
+  định dạng golden `eval/golden/schema.json`, thang chấm người `eval/rubric.md`; còn thiếu **tài liệu thật**,
+  bake-off thật và Lõi văn phong lĩnh vực đầu (§19.9). Xem [`eval/README.md`](eval/README.md).
 
 ## Cấu trúc kho
 

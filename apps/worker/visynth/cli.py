@@ -139,6 +139,7 @@ def cmd_estimate(args: argparse.Namespace) -> int:
 def cmd_run(args: argparse.Namespace) -> int:
     """Chạy trọn pipeline P0–P8 trên kịch bản giả (M0-W2)."""
     from visynth.eval import demo_client, demo_extraction
+    from visynth.pipeline.artifacts import to_artifact, write_artifact
     from visynth.pipeline.models import JobOptions
     from visynth.pipeline.run import run_document
 
@@ -177,47 +178,20 @@ def cmd_run(args: argparse.Namespace) -> int:
         result = run_document(ext, demo_client(ext, tamper=args.tamper, level=args.level), options, seed=args.seed)
     if args.out:
         Path(args.out).write_text(result.markdown + "\n", encoding="utf-8")
-    payload = {
-        "title": result.title,
-        "level": result.level,
-        "grade": result.grade,
-        "metrics": result.metrics,
-        "stats": result.stats,
-        "warnings": result.warnings,
-        "sections": [
-            {"id": s.id, "title_vi": s.title_vi, "unit_ids": s.unit_ids, "target_words": s.target_words}
-            for s in result.sections
-        ],
-        "blocks": [
-            {"block_id": b.block_id, "cites": b.cites, "verdict": b.verdict, "flagged": b.flagged, "removed": b.removed}
-            for b in result.blocks
-        ],
-        "units": [u.as_dict() for u in result.units],
-        "blocks_full": [{**b.as_dict(), "check": result.checks.get(b.block_id, {})} for b in result.blocks],
-        "coverage": result.coverage,
-        "glossary": result.glossary,
-        "profile": result.profile,
-        "markdown": result.markdown,
-        "llm_calls": ledger.totals() if ledger else None,
-        "source": {
-            "path": args.path,
-            "words": result.stats.get("source_words"),
-            "title": result.title,
-        },
-        "duration_ms": int((time.monotonic() - started) * 1000),
-        "params": {
+    payload = to_artifact(
+        result,
+        source={"path": args.path, "words": result.stats.get("source_words"), "title": result.title},
+        params={
             "level": result.level,
             "seed": args.seed,
             "demo": bool(args.demo or not args.path),
             "tamper": getattr(args, "tamper", None),
         },
-    }
+        duration_ms=int((time.monotonic() - started) * 1000),
+        llm_calls=ledger.totals() if ledger else None,
+    )
     if args.artifacts:
-        out_dir = Path(args.artifacts)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        payload["artifacts"] = str(out_dir)
-        (out_dir / "run.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        (out_dir / "report.md").write_text(result.markdown + "\n", encoding="utf-8")
+        write_artifact(payload, args.artifacts)
     human = result.summary() + client_note
     if args.artifacts:
         human += f"\nĐã ghi bộ tệp cho bộ chấm điểm: {args.artifacts}/run.json, {args.artifacts}/report.md"
@@ -404,6 +378,39 @@ def cmd_pool_probe(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_pool_apply_probe(args: argparse.Namespace) -> int:
+    """Nhập số đo của `probe` (và hạn mức đo tay) vào `pool_config` — mặc định chỉ xem trước."""
+    from visynth.pool.apply_probe import apply_updates, plan_updates, write_config
+
+    cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
+    probe = json.loads(Path(args.probe).read_text(encoding="utf-8"))
+    limits = json.loads(Path(args.limits).read_text(encoding="utf-8")) if args.limits else None
+    plan = plan_updates(cfg, probe, limits, today=args.today)
+    if not plan["changes"]:
+        print("Không có thay đổi nào — cấu hình đã khớp số đo (hoặc probe rỗng).")
+        for note in plan["notes"]:
+            print(f"  lưu ý: {note}")
+        return 0
+    new_cfg, errors = apply_updates(cfg, plan)
+    if errors:
+        print("LỖI: cấu hình sau khi áp không hợp lệ, KHÔNG ghi:", file=sys.stderr)
+        for err in errors:
+            print(f"  - {err}", file=sys.stderr)
+        return 1
+    print(("Đã ghi " if args.write else "[xem trước] sẽ áp ") + f"{len(plan['changes'])} thay đổi vào {args.config}:")
+    for change in plan["changes"]:
+        src = f" ({change['source']})" if change.get("source") else ""
+        print(f"  - {change['where']}: {change['from']} → {change['to']}{src}")
+    for item in plan["skipped"]:
+        print(f"  bỏ qua: {item}")
+    if args.write:
+        write_config(new_cfg, args.config)
+        print(f"Đã ghi {args.config} (đã qua validate_config).")
+    else:
+        print("Thêm --write để ghi. Gợi ý: chạy `visynth pool validate --config " + args.config + "` sau khi ghi.")
+    return 0
+
+
 def cmd_pool_simulate(args: argparse.Namespace) -> int:
     """Mô phỏng rời rạc LLM Pool (SPEC §17.12) — không gọi mạng."""
     from visynth.pool.simulate import main as simulate_main
@@ -519,6 +526,14 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--timeout", type=float, default=90.0)
     q.add_argument("--out", help="ghi báo cáo kiểm định JSON")
     q.set_defaults(func=cmd_pool_probe)
+
+    q = ps.add_parser("apply-probe", help="nhập số đo của probe vào pool_config (mặc định chỉ xem trước)")
+    q.add_argument("--config", required=True)
+    q.add_argument("--probe", required=True, help="tệp probe.json do `visynth pool probe --out` ghi")
+    q.add_argument("--limits", help="JSON hạn mức đo tay: {deployments:{id:{rpm,tpm,rpd,tpd}}, groups:{id:{...}}}")
+    q.add_argument("--today", help="ngày ghi vào label của nhóm (mặc định: hôm nay)")
+    q.add_argument("--write", action="store_true", help="ghi thật (mặc định chỉ in thay đổi)")
+    q.set_defaults(func=cmd_pool_apply_probe)
 
     q = ps.add_parser("simulate", help="mô phỏng rời rạc pool (không gọi mạng)")
     q.add_argument("--config", help="pool_config JSON (mặc định: bản mẫu trong docs/examples)")
