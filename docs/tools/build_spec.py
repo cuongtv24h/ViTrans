@@ -4,7 +4,7 @@
 Các bảng được SINH TỪ tệp nguồn (schema, prompt, OpenAPI, bộ ước tính) nên không thể lệch với chúng:
   <!-- TOC -->  <!-- FILE_TREE -->  <!-- SCHEMA_TABLE -->  <!-- PROMPT_TABLE -->  <!-- COST_TABLE -->
   <!-- LEVEL_BUDGET_TABLE -->  <!-- ENDPOINT_TABLE -->  <!-- PROMPTS_APPENDIX -->  <!-- VALIDATION_SUMMARY -->
-  <!-- MT_COST_TABLE -->  <!-- POOL_CAPACITY_TABLE -->  <!-- POOL_SIM_TABLE -->  <!-- STYLE_COMPILE_DEMO -->  <!-- DECLARE_PREVIEW_TABLE -->
+  <!-- POOL_CAPACITY_TABLE -->  <!-- POOL_SIM_TABLE -->  <!-- STYLE_COMPILE_DEMO -->  <!-- DECLARE_PREVIEW_TABLE -->
 Thẻ [[N_PATHS]], [[N_TABLES]], [[N_PROMPTS]], [[N_SCHEMAS]] được thay bằng số đếm thật từ các tệp nguồn.
 
 Chạy:  python tools/build_spec.py [--run-checks] [--pg-dsn postgresql://...]
@@ -26,7 +26,7 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from reference.estimator import LEVELS, REPORT_BUDGET, Price, estimate, estimate_calls, estimate_translation, report_budget_words  # noqa: E402
+from reference.estimator import LEVELS, REPORT_BUDGET, Price, estimate, estimate_calls, report_budget_words  # noqa: E402
 from reference.llm_pool import deployment_daily_capacity, load_pool_model  # noqa: E402
 from reference.prompt_render import load_prompt  # noqa: E402
 from reference.style_core import compile_style_core  # noqa: E402
@@ -41,7 +41,7 @@ LEVEL_NAMES = {
 TREE_DESC = {
     "SPEC.md": "Tài liệu chính (đọc trước). Dựng tự động từ tools/spec_src + prompts",
     "README.md": "Mục lục nhanh",
-    "prompts/": "Thư viện prompt P0-P13 + Lõi văn phong mặc định trung tính (nguồn sự thật của prompt)",
+    "prompts/": "Thư viện prompt P0-P10, P12-P13 (13 prompt) + Lõi văn phong mặc định trung tính (nguồn sự thật của prompt)",
     "prompts/00_style_core_neutral.json": "Lõi văn phong mặc định: không đặt quan điểm nào, thay được",
     "schemas/": "JSON Schema 2020-12 cho mọi đầu ra có cấu trúc (nguồn sự thật của hợp đồng dữ liệu)",
     "examples/": "Ví dụ khớp từng schema, cùng kể một câu chuyện trên tài liệu giả lập",
@@ -181,27 +181,6 @@ def level_budget_table() -> str:
         vals = " | ".join(f"{report_budget_words(w, lv):,}".replace(",", ".") for w in (3_000, 30_000, 90_000))
         rows.append(f"| `{lv}` | {ratio*100:.0f}% | {lo:,} | {hi:,} | {vals} |".replace(",", "."))
     return "\n".join(rows) + "\n\nĐơn vị: từ tiếng Việt. Hàm `report_budget_words()` kẹp trong [tối thiểu, tối đa] và không vượt 80% số từ nguồn."
-
-
-def mt_cost_table() -> str:
-    from datetime import date
-
-    promo = Price("gemini-3.8-flash", date(2026, 9, 2), 0.75, 3.75, 0.075)
-    after = Price("gemini-3.8-flash", date(2027, 1, 1), 1.50, 7.50, 0.15)
-    modes = [("Dịch trực tiếp (P9), phương án được chọn", "direct", {}), ("Bản thô + LLM viết lại toàn bộ", "postedit_full", {}),
-             ("Bản thô + LLM chỉ sửa đoạn cần sửa, giữ 30% bản thô", "postedit_selective", {"keep_rate": 0.3}),
-             ("Bản thô + LLM chỉ sửa đoạn cần sửa, giữ 50% bản thô", "postedit_selective", {"keep_rate": 0.5}),
-             ("Bản thô + LLM chỉ sửa đoạn cần sửa, giữ 70% bản thô", "postedit_selective", {"keep_rate": 0.7}),
-             ("Bản thô + LLM chỉ sửa đoạn cần sửa, giữ 90% bản thô", "postedit_selective", {"keep_rate": 0.9})]
-    base = estimate_translation(90_000, "direct", promo).cost_usd
-    rows = ["| Chế độ (90.000 từ, ~300 trang) | Token vào | Token ra | Chi phí LLM: khuyến mãi / từ 01/01/2027 | So với dịch trực tiếp |", "|---|---|---|---|---|"]
-    for name, mode, kw in modes:
-        a, b = estimate_translation(90_000, mode, promo, **kw), estimate_translation(90_000, mode, after, **kw)
-        d = (a.cost_usd / base - 1) * 100
-        vn = lambda n: f"{n:,}".replace(",", ".")  # noqa: E731
-        rows.append(f"| {name} | {vn(a.tokens_in)} | {vn(a.tokens_out)} | ${_fmt_usd(a.cost_usd)} / ${_fmt_usd(b.cost_usd)} | {'chuẩn' if mode == 'direct' else f'{d:+.0f}%'} |")
-    return "\n".join(rows) + ("\n\nChi phí của chính model dịch máy không tính (miễn phí ở bản thử nghiệm hoặc tự dựng). Sinh bởi `estimate_translation()` trong `reference/estimator.py` "
-                              "(có test); `keep_rate` là tỷ lệ đoạn mà LLM chỉ xác nhận giữ nguyên bản thô, phải đo thật ở Giai đoạn 0.")
 
 
 def pool_capacity_table() -> str:
@@ -391,6 +370,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-checks", action="store_true")
     ap.add_argument("--pg-dsn", default=None)
+    ap.add_argument("--out", default=None, help="ghi ra tệp khác (mặc định SPEC.md); dùng cho check_spec_sync.py")
     args = ap.parse_args()
 
     parts = sorted((ROOT / "tools" / "spec_src").glob("*.md"))
@@ -405,7 +385,6 @@ def main() -> int:
         "<!-- ENDPOINT_TABLE -->": endpoint_table,
         "<!-- PROMPTS_APPENDIX -->": prompts_appendix,
         "<!-- STYLE_COMPILE_DEMO -->": style_compile_demo,
-        "<!-- MT_COST_TABLE -->": mt_cost_table,
         "<!-- POOL_CAPACITY_TABLE -->": pool_capacity_table,
         "<!-- POOL_SIM_TABLE -->": pool_sim_table,
         "<!-- DECLARE_PREVIEW_TABLE -->": declare_preview_table,
@@ -427,9 +406,10 @@ def main() -> int:
     left = re.findall(r"<!-- [A-Z_]+ -->", md)
     if left:
         print("CẢNH BÁO: còn marker chưa thay:", left)
-    (ROOT / "SPEC.md").write_text(md, encoding="utf-8")
+    out = pathlib.Path(args.out) if args.out else ROOT / "SPEC.md"
+    out.write_text(md, encoding="utf-8")
     words = len(md.split())
-    print(f"Đã ghi SPEC.md: {len(md.splitlines())} dòng, ~{words} từ")
+    print(f"Đã ghi {out.name}: {len(md.splitlines())} dòng, ~{words} từ")
     return 0
 
 

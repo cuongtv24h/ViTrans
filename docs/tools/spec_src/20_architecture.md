@@ -18,7 +18,6 @@ Internet ──▶ (tuỳ chọn) Cloudflare: ẩn IP máy chủ, WAF, Turnstile
 │                                                                 tốc độ API, pub/sub SSE)     │
 │  worker ×N (pipeline §6) ── claim_tasks ──▶ PostgreSQL                                       │
 │     ├─ LLM Pool (thư viện trong worker, §17): chọn → đặt chỗ → gọi → ghi nhận ───────────────┼──▶ Gemini API
-│     ├─ khâu bản dịch thô (tuỳ chọn, §18) ────────────────────────────────────────────────────┼──▶ NVIDIA Riva Translate
 │     └─ parser sandbox: container --network none, tạo theo yêu cầu                            │──▶ Nhà cung cấp chuẩn OpenAI ×N
 │  cron: pg_dump mã hoá ──▶ kho đối tượng của nhà cung cấp KHÁC (sao lưu ngoài máy)            │
 └──────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -94,11 +93,10 @@ Hành vi bắt buộc:
 | Profile | Dùng bởi | Yêu cầu năng lực mặc định (`needs`) |
 |---|---|---|
 | `fast` | P0, P1, P2, P8 | ngữ cảnh ≥ 30k, JSON object, điểm `json` ≥ 0.85 |
-| `writer` | P3, P4, P7, P9, P11 | ngữ cảnh ≥ 100k, JSON, điểm `json` ≥ 0.95 và `vi_write` ≥ 0.80 |
+| `writer` | P3, P4, P7, P9 | ngữ cảnh ≥ 100k, JSON, điểm `json` ≥ 0.95 và `vi_write` ≥ 0.80 |
 | `verifier` | P5, P6 | như `writer`; yêu cầu `avoid_groups` = nhóm của người viết khi có thể |
 | `ocr` | P10 | thị giác + PDF |
 | `curator` | P12, P13, thử lõi | `vi_write` ≥ 0.85 |
-| `mt_draft` | khâu bản dịch thô (không có prompt) | `kind = mt`, điểm `mt_en_vi` ≥ 0.7 |
 
 Mỗi profile gồm các **tầng** theo thứ tự (ví dụ: nhóm miễn phí mạnh → trả phí) với chiến lược chọn và thời gian chờ tối đa; cấu hình đầy đủ ở §17.5 và `examples/pool_config.example.json`.
 

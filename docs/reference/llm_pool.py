@@ -613,6 +613,12 @@ def _retry_delay(body) -> float | None:
     return None
 
 
+def _looks_like_bad_key(err: dict, msg: str) -> bool:
+    """Khoá Google không hợp lệ: `API_KEY_INVALID` trong `details` hoặc "API key not valid" trong thông điệp."""
+    blob = f"{msg} {err.get('details', '')}".lower()
+    return "api_key_invalid" in blob or "api key not valid" in blob or "api key expired" in blob
+
+
 def classify_http(kind: str, status: int, headers: dict | None = None, body=None, finish_reason: str | None = None) -> Outcome:
     """Ánh xạ phản hồi của adapter -> Outcome (SPEC §17.7). kind: 'openai_compat' | 'gemini_native'.
 
@@ -650,6 +656,9 @@ def classify_http(kind: str, status: int, headers: dict | None = None, body=None
             return Outcome("rate_limited_minute", retry_after_s=ra)
         return Outcome("rate_limited_unknown", retry_after_s=ra)
     if status in (401, 403):
+        return Outcome("auth_error")
+    if status == 400 and kind == "gemini_native" and _looks_like_bad_key(err, msg):
+        # Google trả 400 INVALID_ARGUMENT ("API key not valid"/API_KEY_INVALID) cho khoá sai — không phải 401.
         return Outcome("auth_error")
     if status == 413 or (status == 400 and re.search(r"context|too many tokens|token count|maximum.*length|too long", msg, re.I)):
         return Outcome("context_exceeded")

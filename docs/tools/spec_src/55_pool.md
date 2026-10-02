@@ -56,7 +56,7 @@ profile writer
 | 8 | Endpoint tương thích OpenAI của Gemini hỗ trợ structured output và `reasoning_effort` nhưng tài liệu ghi còn **beta** | Gemini API: OpenAI compatibility | Có thể viết MỘT adapter cho mọi nhà cung cấp, đổi lại mất bộ nhớ đệm và đọc PDF gốc; spec giữ `gemini_native` cho profile `ocr` |
 | 9 | **LiteLLM** (thư viện/gateway phổ biến để gộp nhiều nhà cung cấp) bị chèn mã độc lên PyPI ngày 24/03/2026 (bản 1.82.7 và 1.82.8, đánh cắp thông tin xác thực; tồn tại trên PyPI từ khoảng 40 phút đến 3 giờ tuỳ nguồn trước khi bị cách ly) | Báo cáo của Datadog Security Labs và các hãng bảo mật | Thành phần giữ mọi khoá API là mục tiêu tấn công; xem §17.13 và §14.1 |
 
-**Kết luận cho người vận hành:** (1) free tier là **khoản trợ cấp**, không phải nền móng; (2) mọi thứ rẻ ở trên đi kèm điều kiện riêng tư hoặc điều khoản, nên pool phải **cưỡng chế bằng code** chứ không bằng thói quen; (3) việc gom nhiều dự án miễn phí là quyết định của bạn (D13: đã chấp nhận) và rủi ro nằm ở tài khoản Google của bạn; pool hỗ trợ, nhưng đòi bạn **khai báo xác nhận** (`risk_ack`, §17.14) cho từng nhóm có cờ rủi ro để có dấu vết, và mặc định tự tắt các nhóm đó ở cổng công khai (bạn có thể chủ động bật, §17.4).
+**Kết luận cho người vận hành:** (1) free tier là **khoản trợ cấp**, không phải nền móng; (2) mọi thứ rẻ ở trên đi kèm điều kiện riêng tư hoặc điều khoản, nên pool phải **cưỡng chế bằng code** chứ không bằng thói quen; (3) việc gom nhiều dự án miễn phí là quyết định của bạn (D12: đã chấp nhận) và rủi ro nằm ở tài khoản Google của bạn; pool hỗ trợ, nhưng đòi bạn **khai báo xác nhận** (`risk_ack`, §17.14) cho từng nhóm có cờ rủi ro để có dấu vết, và mặc định tự tắt các nhóm đó ở cổng công khai (bạn có thể chủ động bật, §17.4).
 
 ### 17.4 Chính sách riêng tư, điều khoản và cổng triển khai
 
@@ -82,7 +82,7 @@ profile writer
 | `B` (đăng ký mở) | `private` cho người mới; `standard` là lựa chọn có đồng ý | Chỉ cho `standard` | **Không** | **Không** |
 | `C` (bán tín dụng) | `private`; `standard` giá thấp hơn nếu muốn (§13.1) | Chỉ cho `standard` | **Không** | **Không** |
 
-**Xác nhận rủi ro và quyền quyết định của chủ hệ thống (D13).** Nhóm gắn cờ `multi_account_risk` hoặc `trial_only` chỉ được dùng khi chủ hệ thống đã **xác nhận chấp nhận** đúng cờ đó (`risk_ack`, ghi người xác nhận và thời điểm). Ba lớp, từ chắc nhất:
+**Xác nhận rủi ro và quyền quyết định của chủ hệ thống (D12).** Nhóm gắn cờ `multi_account_risk` hoặc `trial_only` chỉ được dùng khi chủ hệ thống đã **xác nhận chấp nhận** đúng cờ đó (`risk_ack`, ghi người xác nhận và thời điểm). Ba lớp, từ chắc nhất:
 
 1. **CSDL:** CHECK không cho `enabled = true` nếu nhóm có cờ mà thiếu xác nhận tương ứng (`risk_ack_required`).
 2. **Router:** nhóm có cờ chưa xác nhận không bao giờ được chọn, dù cấu hình sai.
@@ -194,6 +194,7 @@ else:                        # Impossible
 | 429 không rõ | Còn lại | Cooldown mũ `min(600, 30 × 2^k)` giây | Như trên |
 | 5xx, timeout, lỗi mạng | | Sức khoẻ giảm; **3 lỗi liên tiếp mở circuit** `min(600, 15 × 2^(lần mở−1))` giây; sau đó half-open cho đúng MỘT lời gọi thăm dò, thành công thì đóng | Thử ngay deployment khác |
 | 401, 403 | | Khoá bị **cách ly** (`quarantined`) tới khi Admin gỡ; ghi sự cố | Deployment khác; cảnh báo Admin |
+| Khoá sai trả về **400** | Google: "API key not valid" hoặc `reason = API_KEY_INVALID` (Google trả 400 `INVALID_ARGUMENT` cho khoá sai, **không phải 401**) | Như 401/403 — cách ly khoá | Như 401/403 |
 | 400 vượt ngữ cảnh | "context", "too many tokens"... | Không phạt | Chia nhỏ đầu vào |
 | 400 khác | | Không phạt | Lỗi lập trình: không thử lại |
 | Cắt cụt (`length`, `MAX_TOKENS`) | `finish_reason` | Không phạt | `OutputTruncated`: chia đôi đầu vào |
@@ -294,111 +295,44 @@ Tín dụng của người dùng **không phụ thuộc** deployment nào phục
 
 **Biện pháp chuỗi cung ứng cho thành phần giữ khoá (bắt buộc dù chọn phương án nào):** ghim phiên bản và hash (`pip install --require-hashes`); không `pip install` không ghim trong build; bản sao lưu và log không chứa khoá; egress của worker chỉ tới tên miền các nhà cung cấp đã khai báo; quét lỗ hổng định kỳ; khoá chủ tách khỏi bản sao lưu (§20.5).
 
-### 17.14 Khai báo nhà cung cấp và khoá (phương pháp nhập thông tin)
+### 17.14 Khai báo nhà cung cấp và khoá (một cách nhập duy nhất)
 
-Câu hỏi của bạn là "chỉ cần có chỗ khai báo, các khoá cách nhau bằng dấu phẩy". Thiết kế dưới đây đúng như vậy: **khai thông tin chung của một nhà cung cấp một lần, rồi dán cả chuỗi khoá**; hệ thống tự tạo nhóm hạn mức, khoá, model, deployment và gắn cờ điều khoản. Có mã tham chiếu và test (`reference/pool_declare.py`, `reference/pool_secrets.py`, `tests/test_pool_declare.py`, `tests/pg_smoke.py`).
+**Cách làm:** vào `/admin/pool` → **Thêm khoá**, khai thông tin chung của nhà cung cấp **một lần**, rồi dán danh sách khoá vào một ô. Hệ thống tự sinh nhóm hạn mức, khoá, model và deployment; chỗ nào chưa biết thì để trống, hệ thống dùng **mặc định bảo thủ** và nói rõ trong bản xem trước.
 
-**Ba cách nhập (cùng một cơ chế phía sau):**
-
-| Cách | Dùng khi | Ở đâu |
+| Bước | Việc | Chi tiết |
 |---|---|---|
-| **A. Khai báo nhanh** (biểu mẫu từng bước) | Thêm hoặc sửa thường ngày | `/admin/pool`, nút "Khai báo nhanh" |
-| **B. Tệp khai báo YAML** (mẫu có chú thích tiếng Việt) | Nhiều nhà cung cấp một lúc; muốn lưu bản khai báo (đã bỏ khoá) để lặp lại | `examples/pool_declaration.template.yaml`; `POST /admin/pool/declare` |
-| **C. Nhập/xuất `pool_config` đầy đủ** | Sao lưu, chuyển máy, chỉnh sâu tầng và profile | §17.5, `PUT /admin/pool/config` |
+| 1 | Chọn nhà cung cấp | Preset `gemini` (điền sẵn địa chỉ, giao thức, mặc định) hoặc nhà cung cấp chuẩn OpenAI (khai `base_url` https và tên model) |
+| 2 | Chọn gói | `free`, `trial` hoặc `paid` — quyết định chính sách dữ liệu và cờ điều khoản được suy ra |
+| 3 | Dán khoá | Một ô: ngăn cách bằng dấu phẩy, chấm phẩy, xuống dòng hoặc khoảng trắng; chấp nhận dòng kiểu `.env` (`TEN=khoá`) và tiền tố `Bearer`; muốn nói rõ khoá nào **cùng một tài khoản/dự án** thì viết `nhãn\|khoá` |
+| 4 | Xem trước (dry-run) | Hiện đúng những gì sẽ tạo (nhóm, khoá — chỉ 4 ký tự cuối —, deployment, cổng), cảnh báo và mặc định đang dùng; **chưa ghi gì** |
+| 5 | Áp dụng | Ghi trong một giao dịch; khoá mã hoá ngay và chỉ hiện 4 ký tự cuối; nhóm gắn cờ rủi ro mặc định chỉ chạy ở `dev`/`A` |
 
-**Phiếu thông tin cần có cho mỗi nhà cung cấp** (đây là toàn bộ "phương pháp nhập"; điền theo bảng, chỗ nào chưa biết thì dùng mặc định bảo thủ):
+**Hệ thống tự suy ra (không bắt khai):** hạn mức thiếu → 5 yêu cầu/phút, 1 lời gọi đồng thời, tính cả tài khoản, kèm cảnh báo; ngữ cảnh và đầu ra tối đa → 32.768/4.096; JSON mode → `none` (dùng bậc thang nhúng schema vào prompt, §17.9); chính sách dữ liệu → `unknown` (coi như nhà cung cấp có dùng nội dung để cải thiện sản phẩm, nên **không** vào chế độ riêng tư); mặc định khác theo preset `gemini`: giao thức `gemini_native`, hạn mức tính theo model, `reset_tz` giờ Thái Bình Dương, model `gemini-3.8-flash`. Sửa lại bất cứ lúc nào ở `pool_config` (§17.5) hoặc bằng cách dán lại khai báo.
 
-| Thông tin | Tìm ở đâu | Nếu chưa biết (mặc định bảo thủ) |
-|---|---|---|
-| Địa chỉ gốc API (`base_url`, bắt buộc https) | Mục "OpenAI compatibility" trong tài liệu nhà cung cấp | Bắt buộc, không có mặc định (preset `gemini` đã điền sẵn) |
-| Tên model (`model_id`) | Trang danh sách model, hoặc lời gọi liệt kê model bằng chính khoá của bạn | Bắt buộc |
-| Cửa sổ ngữ cảnh và số token ra tối đa | Trang của từng model | 32.768 và 4.096 (kèm cảnh báo) |
-| Mức hỗ trợ JSON (`json_schema`, `json_object`, không) | Mục structured outputs trong tài liệu | `none` (an toàn: pool dùng bậc thang nhúng schema vào prompt, §17.9) |
-| Hạn mức: yêu cầu/phút, token/phút, yêu cầu/ngày, đồng thời; **tính theo dự án hay cả tài khoản** | Bảng điều khiển của nhà cung cấp (mục rate limit) | 5 yêu cầu/phút, 1 lời gọi đồng thời, tính cả tài khoản |
-| Chính sách dữ liệu (có dùng nội dung để huấn luyện không) | Điều khoản và trang quyền riêng tư của nhà cung cấp | `unknown` (bị coi như có dùng; không vào chế độ riêng tư) |
-| Gói (`free`, `trial`, `paid`) | Gói tài khoản của bạn | Bắt buộc |
-| Giờ đặt lại hạn mức ngày | Tài liệu nhà cung cấp | UTC (preset `gemini`: giờ Thái Bình Dương) |
+**Khoá nào vào nhóm nào:**
 
-**Cách nhập danh sách khoá.** Dán vào một ô, ngăn cách bằng dấu phẩy, chấm phẩy, xuống dòng hoặc khoảng trắng đều được; bỏ dấu nháy và ngoặc bao quanh; chấp nhận tiền tố `Bearer` và dòng kiểu `.env` (`TEN_BIEN=khoá`). Dạng `nhãn|khoá` để chỉ rõ **khoá nào thuộc cùng một tài khoản hay dự án**:
-
-| Bạn dán | `group_mode` | Kết quả |
-|---|---|---|
-| `AIza…A, AIza…B, AIza…C` (ba tài khoản khác nhau, không nhãn) | `per_key` (mặc định) | Ba nhóm hạn mức riêng `gemini-free-1`, `-2`, `-3`: mỗi khoá cộng thêm một phần hạn mức |
-| `acc1\|AIza…A, acc2\|AIza…B` | `per_key` | Hai nhóm `gemini-free-acc1`, `gemini-free-acc2` (nhãn dễ nhận diện hơn số thứ tự) |
-| `duan\|AIza…A, duan\|AIza…B` (hai khoá cùng một dự án) | `per_key` | **Một** nhóm `gemini-free-duan` có hai khoá: chung hạn mức, chỉ để dự phòng |
-| `AIza…A, AIza…B` (cùng một dự án, không nhãn) | `single_group` | Một nhóm có hai khoá |
-
-Mỗi khoá được kiểm tra trước khi nhận; khoá bị bỏ qua được báo cùng lý do và **chỉ hiện 4 ký tự cuối**, các khoá tốt vẫn được thêm:
-
-| Trạng thái | Nghĩa |
+| Bạn dán | Kết quả |
 |---|---|
-| `ok` | Nhận |
-| `duplicate_in_request` | Dán hai lần trong cùng lần khai báo |
-| `duplicate_existing` | Đã có trong hệ thống (so bằng dấu vân tay HMAC, không giải mã khoá nào); chỉ mục duy nhất của CSDL chặn tiếp ở tầng cuối |
-| `too_short` | Ngắn hơn 16 ký tự |
-| `invalid` | Có khoảng trắng, dấu tiếng Việt hoặc ký tự điều khiển; hoặc sai định dạng khoá của nhà cung cấp (preset `gemini`: bắt đầu bằng `AIza`) |
-| `placeholder` | Trông như chuỗi giữ chỗ (`DÁN_KHOÁ_1`, `your_api_key`, `xxxx…`, `AIza...`, một ký tự chiếm gần hết chuỗi): ngăn việc áp dụng nhầm bản mẫu chưa điền |
+| `AIza…A, AIza…B, AIza…C` | Ba nhóm riêng — mỗi khoá cộng thêm một phần hạn mức |
+| `acc1\|AIza…A, acc2\|AIza…B` | Hai nhóm, đặt tên theo nhãn |
+| `duan\|AIza…A, duan\|AIza…B` (cùng dự án) | **Một** nhóm hai khoá: chung hạn mức, khoá thứ hai để dự phòng |
+| Chọn "một nhóm" thay vì "mỗi khoá một nhóm" | Gộp mọi khoá vừa dán vào thành một nhóm |
 
-**Hệ thống tự suy ra gì (bạn không phải khai):**
+Mỗi khoá được kiểm tra trước khi nhận; khoá lỗi bị bỏ **kèm lý do**, chỉ hiện 4 ký tự cuối, các khoá tốt vẫn được thêm: `ok`, `duplicate_in_request`, `duplicate_existing` (so bằng dấu vân tay HMAC, không giải mã khoá nào), `too_short` (ngắn hơn 16 ký tự), `invalid` (khoảng trắng, dấu tiếng Việt hoặc sai định dạng preset), `placeholder` (chuỗi giữ chỗ như `DÁN_KHOÁ_1`, `your_api_key`, `AIza...`).
 
-| Điều kiện | Hệ quả |
-|---|---|
-| Preset `gemini` | Địa chỉ, giao thức `gemini_native`, `reset_tz = America/Los_Angeles`, `tpm_basis = input`, hạn mức tính theo model, model mặc định `gemini-3.8-flash` (JSON schema, thị giác, PDF, ngữ cảnh 1M) |
-| Gói `free` của Gemini | `data_policy = may_train`, cờ `no_eea_uk_ch` |
-| Gói `paid` | Deployment `metered`, Gemini `data_policy = no_training`; nhà cung cấp tuỳ chỉnh vẫn `unknown` cho tới khi bạn khai |
-| Từ **hai** nhóm `free` hoặc `trial` trở lên của cùng một nhà cung cấp | Cờ `multi_account_risk` và cổng cho phép mặc định `[dev, A]`; **cần `risk_ack`** |
-| Gói `trial` | Cờ `trial_only`, `no_personal_data`, cổng `[dev]`; **cần `risk_ack: [trial_only]`** |
-| Hạn mức tính cả tài khoản (`limits_scope = group`, mặc định của nhà cung cấp tuỳ chỉnh) | Hạn mức đặt ở **nhóm**, áp cho mọi model; `deployment` thì theo từng model |
-| Thiếu `limits`, `ctx_in`, `max_out`, `structured` | Mặc định bảo thủ kèm cảnh báo |
-| Giá tham chiếu cho chi phí bóng | `gemini-3.8-flash` nếu không khai |
+**Rủi ro điều khoản — một ô tick, không phải thủ tục.** Khai từ hai nhóm `free`/`trial` trở lên của cùng một nhà cung cấp ⇒ hệ thống tự gắn cờ `multi_account_risk`; gói `trial` ⇒ cờ `trial_only` và `no_personal_data`. Khi đó bước xem trước hiện một ô tick ngắn: *"Tôi hiểu và tự chịu rủi ro điều khoản với các tài khoản của mình"*; tick rồi mới áp dụng được, dấu vết (ai, khi nào, cờ nào) được ghi lại. Nhóm gắn cờ mặc định chỉ chạy ở cổng `dev`/`A`, **không bao giờ** phục vụ job `private`; muốn nới ra cổng công khai phải chủ động bật ở `/admin/pool` (§17.4).
 
-**Chỗ khai báo chấp nhận rủi ro.** Trong khai báo có trường `risk_ack: [multi_account_risk]` (hoặc ô tick trong biểu mẫu). Thiếu xác nhận cho cờ mà hệ thống suy ra thì khai báo bị từ chối, kèm thông báo nêu đúng giá trị phải thêm. Xác nhận được ghi cùng người và thời điểm (§17.4 giải thích ba lớp cưỡng chế). Đây là thiết kế cho quyết định D13 của bạn: bạn **chấp nhận** rủi ro, spec chỉ giữ dấu vết để bạn (hoặc người khác dùng chung hệ thống) biết mình đã chấp nhận điều gì.
+**Thêm khoá vào nhóm có sẵn:** ở bước 1 chọn nhóm nguồn rồi dán khoá mới — nhà cung cấp, gói, chính sách dữ liệu, cờ, hạn mức và model sao chép nguyên từ nhóm nguồn.
 
-**Ví dụ chạy được** (`examples/pool_declaration.example.json`; dạng YAML ở mẫu). Kết quả biên dịch của đúng ví dụ đó (khoá chỉ hiện 4 ký tự cuối):
+**Bản xem trước của một khai báo mẫu** (`examples/pool_declaration.example.json`; sinh tự động bởi `reference/pool_declare.py`, có test):
 
 <!-- DECLARE_PREVIEW_TABLE -->
 
-```yaml
-declarations:
-  - provider: { preset: gemini }
-    tier: free
-    keys: "acc1|AIza…, acc2|AIza…, acc3|AIza…"          # ba tài khoản Google
-    limits: { rpm: 10, tpm: 250000, rpd: 250, concurrency: 3 }   # chép số thật từ AI Studio
-    risk_ack: [multi_account_risk]
-  - provider: { preset: custom, id: provider-c, base_url: "https://api.provider-c.example/v1" }
-    tier: free
-    keys: "khoá1, khoá2"
-    limits: { rpm: 20, tpm: 60000, rpd: 1000, concurrency: 2 }
-    models: [ { model_id: large-chat-v1, ctx_in: 131072, max_out: 8192, structured: json_object } ]
-    risk_ack: [multi_account_risk]
-```
+> Nhiều nhà cung cấp một lúc, hoặc muốn lưu bản khai báo (đã bỏ khoá) để lặp lại: dán tệp YAML theo mẫu `examples/pool_declaration.template.yaml` vào cùng biểu mẫu/`POST /admin/pool/declare?dry_run=true`; biểu mẫu chỉ là lớp tiện dụng phía trên.
 
-**Thêm khoá về sau: nhân bản một nhóm có sẵn.** Chỉ cần dán khoá mới; tất cả còn lại (nhà cung cấp, gói, chính sách dữ liệu, cờ, xác nhận, hạn mức, model) sao chép từ nhóm nguồn:
+**Bảo mật khi nhập khoá (bắt buộc, hệ thống tự làm):** chỉ HTTPS, vai trò `admin`, 2FA, giới hạn tốc độ riêng cho endpoint; endpoint nằm trong danh sách **không ghi nội dung** của log, Sentry và `audit_log` (chỉ ghi số khoá và id nhóm); phản hồi, xem trước và lỗi không bao giờ chứa khoá đầy đủ (có test dò từng khoá); mã hoá AES-256-GCM ngay khi ghi, khoá con HKDF từ `POOL_MASTER_KEY` để ngoài CSDL và bản sao lưu, dấu vân tay HMAC chống trùng (`reference/pool_secrets.py`); lỗi giữa chừng thì không ghi gì; trình duyệt xoá ô nhập ngay sau khi áp dụng, không lưu nháp có khoá.
 
-```yaml
-declarations:
-  - clone_from_group: gemini-free-acc1
-    keys: "AIza…, AIza…"
-```
-
-**Sau khi áp dụng:**
-
-1. `validate_keys: true` thì hệ thống kiểm tra từng khoá bằng lời gọi **liệt kê model** (không tốn token; OpenAI-compatible: `GET {base_url}/models`, Gemini: liệt kê model). Khoá bị từ chối (401/403) chuyển ngay sang `quarantined` (§17.7).
-2. Deployment mới chưa có điểm chất lượng nên chỉ phục vụ các profile không đòi chất lượng. Chạy `probe` (§17.9) để có điểm, hoặc **tự khai `quality`** trong khai báo nếu bạn tự đo và tự chịu trách nhiệm.
-3. Nên bắt đầu ở cổng `dev` hoặc `A`, theo dõi `/admin/pool` vài ngày (§17.15) trước khi tăng `weight`.
-
-**Bảo mật khi nhập khoá (bắt buộc):**
-
-| Biện pháp | Chi tiết |
-|---|---|
-| Kênh và quyền | Chỉ HTTPS, chỉ vai trò `admin`, 2FA; giới hạn tốc độ riêng cho endpoint |
-| Không ghi vết nội dung | `POST /admin/pool/declare` và các endpoint khoá nằm trong danh sách **không ghi nội dung yêu cầu** của log, Sentry và `audit_log` (chỉ ghi số lượng khoá và id nhóm) |
-| Chỉ trả 4 ký tự cuối | Phản hồi, xem trước, lỗi và cảnh báo không bao giờ chứa khoá đầy đủ (có test dò từng khoá trong mọi phần trả cho client) |
-| Mã hoá ngay | AES-256-GCM, AAD là id khoá, khoá con HKDF từ `POOL_MASTER_KEY` nằm ngoài CSDL và bản sao lưu; dấu vân tay HMAC để chống trùng (`reference/pool_secrets.py`) |
-| Giao dịch nguyên tử | Lỗi giữa chừng thì không ghi gì (có test) |
-| Không có khoá chủ | `dry_run` vẫn chạy được, ghi thật bị từ chối |
-| Phía trình duyệt | Xoá ô nhập ngay sau khi áp dụng; không lưu nháp có khoá vào `localStorage`; không điền sẵn lại |
-| Thói quen | Đừng dán khoá vào chat, email, issue hay kho mã; đừng lưu tệp YAML đã điền khoá; cấu hình xuất ra chỉ có `enc:<id>` |
+**Sau khi áp dụng:** (1) `validate_keys: true` thì hệ thống kiểm tra từng khoá bằng lời gọi liệt kê model (không tốn token); khoá bị từ chối (401/403) vào `quarantined` (§17.7). (2) Deployment mới chưa có điểm chất lượng nên chỉ phục vụ profile không đòi chất lượng — chạy `probe` (§17.9) để có điểm, hoặc tự khai `quality`. (3) Ở cổng `dev`/`A` vài ngày, xem `/admin/pool` (§17.15) rồi mới tăng `weight`.
 
 ### 17.15 Quản trị và vận hành pool
 

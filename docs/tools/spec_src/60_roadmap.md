@@ -7,7 +7,7 @@
 
 | Mốc | Thời gian | Nội dung | Tiêu chí hoàn thành |
 |---|---|---|---|
-| **M0 Prototype** | 2-3 tuần | CLI chạy trọn pipeline trên TXT/DOCX/PDF có chữ; P0-P8 + P9/P11 + kiểm tra tất định; chạy trên golden subset; bake-off model. **Thêm cho bản 0.2:** chạy `probe` trên từng nhà cung cấp/khoá thật và sửa `classify_http` theo phản hồi thật; đo hạn mức thật và `tokenizer_factor`; thí nghiệm bản dịch thô (§18.8); khởi tạo glossary và Lõi văn phong cho lĩnh vực đầu tiên (§19.9); hiệu chỉnh hằng số chi phí; chọn nhà cung cấp VPS và vùng bằng `mtr` | Đạt ngưỡng §2.2 trên ≥ 5 tài liệu; `estimate` lệch ≤ 35% so với chi phí thật; `pool_config` thật nạp và `probe` đạt; quyết định bật/tắt bản dịch thô theo quy tắc §18.8; lõi lĩnh vực đầu tiên thắng lõi trung tính trên golden set (§19.9) hoặc bị loại |
+| **M0 Prototype** | 2-3 tuần | CLI chạy trọn pipeline trên TXT/DOCX/PDF có chữ; P0-P9 + kiểm tra tất định; chạy trên golden subset; bake-off model. **Thêm:** chạy `probe` trên từng nhà cung cấp/khoá thật và sửa `classify_http` theo phản hồi thật; đo hạn mức thật và `tokenizer_factor`; thử `declare` + `risk_ack` cho pool thật; khởi tạo glossary và Lõi văn phong cho lĩnh vực đầu tiên (§19.9); hiệu chỉnh hằng số chi phí; chọn nhà cung cấp VPS và vùng bằng `mtr` | Đạt ngưỡng §2.2 trên ≥ 5 tài liệu; `estimate` lệch ≤ 35% so với chi phí thật; `pool_config` thật nạp và `probe` đạt; lõi lĩnh vực đầu tiên thắng lõi trung tính trên golden set (§19.9) hoặc bị loại |
 | **M1 Backend lõi** | 3-4 tuần | CSDL, đăng nhập, upload, orchestration theo §12, SSE, sổ tín dụng, mã mời, trần chi tiêu, OCR, parser sandbox. **Thêm:** LLM Pool (hai adapter, Router, nối hàm SQL, kho khoá mã hoá, Admin API), curation runs (P12, P13), API Lõi văn phong và glossary, VPS (compose, Caddy, sao lưu ra ngoài máy, giám sát ngoài máy) | Kịch bản AC-01..AC-26 (Phụ lục B) đạt trên môi trường staging; diễn tập khôi phục đạt AC-25 |
 | **M2 Frontend MVP** | 3-4 tuần | Wizard 3 bước (kèm chế độ riêng tư và đồng ý), cổng glossary, trang đọc có trích dẫn, xuất MD/DOCX/PDF, quản lý glossary, Admin (kèm `/admin/pool`), giao diện duyệt Lõi văn phong và hàng đợi thuật ngữ (§19.6) | Người dùng thử hoàn thành F2 không cần hướng dẫn; curator duyệt được một lõi và một bản glossary từ đầu đến cuối |
 | **M3 Làm cứng và beta** | 2 tuần | Giới hạn tốc độ, bảo mật máy chủ (§20.4), quan sát, trang pháp lý, diễn tập sự cố (kể cả hết hạn mức, khoá bị từ chối, nhà cung cấp sập, VPS chết); **cổng A** với 20-30 người | Checklist §14.5 (phần cổng A) đạt; KPI §2.2 trên job thật |
@@ -16,6 +16,8 @@
 | **P3** | Sau | Nhiều tài liệu một báo cáo, API công khai | |
 
 Tổng MVP đến cổng A: khoảng **11-14 tuần** với 1-2 dev (bản 0.1 ước 8-10 tuần; phần thêm là pool, Lõi văn phong, curation và hạ tầng một VPS). M0 là cổng quyết định "đi tiếp hay chỉnh hướng" rẻ nhất: nếu không đạt chất lượng, chưa cần xây giao diện.
+
+**Kế hoạch thi công chi tiết** (cấu trúc kho mã, việc theo từng tuần của M0, CI và tiêu chí thoát mốc): [`BUILD_PLAN.md`](BUILD_PLAN.md) trong cùng thư mục.
 
 ### 21.2 Chi phí vận hành tham khảo mỗi tháng
 
@@ -45,7 +47,7 @@ Tổng MVP đến cổng A: khoảng **11-14 tuần** với 1-2 dev (bản 0.1 �
 | R14 | Chuỗi cung ứng thư viện giữ khoá API bị tấn công (LiteLLM 03/2026) | Thấp / Cao | Lõi mỏng tự viết, ghim phiên bản và hash, chặn egress theo tên miền, khoá chủ ngoài bản sao lưu (§17.13, §20.4) |
 | R15 | VPS là điểm lỗi duy nhất; mất dữ liệu hoặc ngừng dịch vụ lâu | Trung bình / Cao | Sao lưu mã hoá ngoài máy và diễn tập khôi phục hằng quý; WAL ngoài máy ở cổng C; giám sát ngoài máy (§20) |
 | R16 | Nghĩa vụ PDPL của cá nhân vận hành máy chủ ngoài lãnh thổ chưa rõ (hồ sơ chuyển dữ liệu ra nước ngoài, miễn trừ) | Trung bình / Cao | Luật sư trước cổng B; cân nhắc đăng ký hộ kinh doanh/doanh nghiệp siêu nhỏ; chính sách quyền riêng tư đầy đủ (§14.4, §20.8) |
-| R17 | Khâu bản dịch thô làm giảm chất lượng hoặc không tiết kiệm như kỳ vọng | Trung bình / Thấp | Mặc định tắt; quy tắc bật dựa trên bake-off; fallback từng đoạn; giám sát `edit_level` (§18) |
+| R17 | Khai báo nhà cung cấp/khoá sai (hạn mức, chính sách dữ liệu, cờ ToS) làm pool chọn sai hoặc tính chi phí sai | Trung bình / Trung bình | Dry-run trước khi áp dụng, `risk_ack` bắt buộc cho cờ rủi ro, chạy `probe` sau khi thêm, ghi `audit_log`; quy trình ở §17.14 |
 | R18 | Lõi văn phong do AI đề xuất làm lệch văn phong hoặc mang quan điểm không có căn cứ | Trung bình / Trung bình | Bằng chứng bắt buộc, AI nêu câu hỏi thay vì khẳng định, người duyệt, phiên bản bất biến, phải thắng lõi trung tính trên golden set, quy tắc bất biến nằm ngoài lõi (§19) |
 
 ---
@@ -67,11 +69,11 @@ Tổng MVP đến cổng A: khoảng **11-14 tuần** với 1-2 dev (bản 0.1 �
 | Q11 | **Đã chốt về cơ chế: AI đề xuất, người duyệt** (§19). Còn lại: ai là người duyệt đầu tiên và lĩnh vực đầu tiên có những tài liệu mẫu và cặp dịch tham chiếu nào | Bạn là curator đầu tiên; tối thiểu 3 tài liệu mẫu và 5 cặp tham chiếu cho lĩnh vực đầu tiên |
 | Q12 | Danh sách nhà cung cấp chuẩn OpenAI bạn đang có: tên, model, chính sách dữ liệu và hạn mức (đọc từ bảng điều khiển của họ) | Cần để điền `pool_config` thật; chưa rõ thì `data_policy = unknown` (bị coi như dùng dữ liệu, không vào chế độ `private`) |
 | Q13 | Bạn thật sự sở hữu bao nhiêu dự án Gemini miễn phí; chấp nhận rủi ro tài khoản (§17.3 dòng 5) ở cổng A không; đã có dự án trả phí chưa | Chỉ dùng số dự án bạn tự dùng cho chính ứng dụng này; luôn có ít nhất một dự án trả phí làm chỗ dựa |
-| Q14 | Khâu bản dịch thô: dùng endpoint miễn phí của NVIDIA ở closed beta (chấp nhận rủi ro điều khoản), tự chạy trọng số mở trên GPU thuê, hay bỏ? | Chỉ thí nghiệm ở `dev`; quyết định theo kết quả §18.8 |
+| Q14 | **Đã chốt: bỏ hẳn khâu bản dịch thô, kể cả công cụ ước tính so sánh và bảng chi phí (§18).** | Bỏ hẳn (0.3) |
 | Q15 | Tư cách người vận hành: giữ cá nhân hay đăng ký hộ kinh doanh/doanh nghiệp siêu nhỏ (ảnh hưởng miễn trừ hồ sơ PDPL, §20.8) | Hỏi luật sư trước cổng B |
 | Q16 | Chế độ riêng tư mặc định ở cổng A và B, và có giá tín dụng thấp hơn cho `standard` không | A: `standard` có đồng ý; B và C: `private`; chưa giảm giá |
 | Q17 | **Mục 6 trong câu trả lời của bạn để trống.** Bạn muốn bổ sung điều gì? | (không có mặc định) |
-| Q18 | Đồng ý với ngưỡng bật bản dịch thô (§18.8) và ngưỡng "lõi phải thắng lõi trung tính" (§19.9) không | Như spec |
+| Q18 | Đồng ý với ngưỡng "lõi phải thắng lõi trung tính" (§19.9) không (ngưỡng bật bản dịch thô đã bỏ cùng §18) | Như spec |
 
 ---
 
@@ -107,8 +109,8 @@ Tổng MVP đến cổng A: khoảng **11-14 tuần** với 1-2 dev (bản 0.1 �
 | AC-18 | Nhà cung cấp trả 429 theo phút, rồi 3 lỗi 5xx liên tiếp | Cooldown đúng thời gian; task chuyển sang deployment khác không mất; circuit mở rồi đóng sau lời gọi thăm dò thành công |
 | AC-19 | Khoá bị từ chối (401) | Khoá chuyển `quarantined`, cảnh báo Admin; các khoá khác tiếp tục phục vụ |
 | AC-20 | Người dùng ở nước thuộc `restricted_free_tier_countries` | Không bao giờ được phục vụ bởi nhóm gắn `no_eea_uk_ch` |
-| AC-21 | Mức dịch đầy đủ, `draft_mt_mode = auto`, endpoint dịch máy chết giữa chừng | Job vẫn hoàn tất, mọi pid có bản dịch; `reports.stats.draft` ghi số đoạn quay về dịch trực tiếp; hạng chất lượng không bị hạ vì khâu này; không segment nào chậm quá `segment_deadline_s` vì khâu này |
-| AC-22 | Dịch máy trả sai số đoạn hoặc rác | Chia nhỏ rồi fallback; không đoạn nào mất hay trùng |
+| AC-21 | Khai báo pool: dán 3 khoá Gemini miễn phí kèm 3 nhãn tài khoản, chạy `declare` ở chế độ dry-run | Bản xem trước nêu nhóm/khoá/deployment sẽ tạo, chỉ hiện 4 ký tự cuối của mỗi khoá, cảnh báo cần `risk_ack: [multi_account_risk]`; **không ghi gì** vào CSDL khi còn dry-run |
+| AC-22 | Khai báo có khoá giả (`DÁN_KHOÁ_1`), khoá trùng và khoá quá ngắn | Từng khoá bị bỏ kèm lý do `placeholder`/`duplicate_in_request`/`too_short`; khoá tốt vẫn được thêm; thiếu `risk_ack` trả `risk_ack_required`, không áp dụng cấu hình |
 | AC-23 | Sửa hoặc xoá phiên bản Lõi văn phong đã duyệt; duyệt khi còn quyết định mở hoặc mục AI chưa xác nhận | Bị CSDL từ chối (sửa, xoá) hoặc API trả `approval_blocked` (duyệt) |
 | AC-24 | P12 trả quy tắc có `source_ref` không tồn tại | Bằng chứng bị loại; mọi mục AI sinh ra có `origin = ai` và `reviewed = false` |
 | AC-25 | Khôi phục VPS từ sao lưu (diễn tập) | Hoàn tất ≤ 4 giờ; sổ tín dụng khớp; job dở được hoàn tín dụng; nội dung tài liệu gốc không có trong sao lưu |
@@ -122,7 +124,7 @@ Tổng MVP đến cổng A: khoảng **11-14 tuần** với 1-2 dev (bản 0.1 �
 
 **Số liệu (`reference/numbers_check.py`):** trích mọi số (bỏ số thứ tự danh sách và ID nội bộ) → chuẩn hoá (`1,000`=`1.000`=`1000`; `3,5`=`3.5`) → đổi chữ số viết bằng chữ tiếng Anh ở phía nguồn (`two`→`2`) → số có trong báo cáo mà không có trong nguồn là "chưa kiểm chứng".
 
-**Lint thuật ngữ (`reference/glossary_lint.py`):** NFC → với mỗi mục: biến thể bị cấm; dạng `target (source)` ở lần dùng đầu nếu `keep_original`; thuật ngữ nguồn bị bỏ trần (sau khi loại các dạng hợp lệ).
+**Lint thuật ngữ (`reference/glossary_lint.py`):** NFC → với mỗi mục: biến thể bị cấm; dạng `target (source)` ở lần dùng đầu nếu `keep_original` **và** `target_term` khác `source_term`; thuật ngữ nguồn bị bỏ trần (sau khi loại các dạng hợp lệ).
 
 **Hàng đợi (`claim_tasks`):** duyệt tối đa 500 task `pending` đến hạn của job `running` (khoá `SKIP LOCKED`); với mỗi job thử advisory lock, đếm task `running`, chỉ nhận nếu dưới giới hạn.
 
@@ -134,7 +136,7 @@ Tổng MVP đến cổng A: khoảng **11-14 tuần** với 1-2 dev (bản 0.1 �
 
 **Giao thức chuyển dự phòng (`acquire_failover`):** thử với `exclude`; nếu `Impossible` hoặc phải chờ quá 30 giây thì thử lại không `exclude`, lấy lease nếu có, nếu không thì `Wait` không sớm hơn 5 giây.
 
-**Bước bản thô (`draft_paragraphs`):** lọc đoạn dịch máy được → gói cửa sổ ≤ 900 token → với mỗi cửa sổ: quá hạn segment hoặc breaker đóng → `skipped`; gọi; `MtSkip` → `skipped`; `MtFailure` → ghi breaker, chia đôi nếu `splittable`, ngược lại `failed`; sai số đoạn → chia đôi tới đoạn đơn; kiểm tra từng đoạn → `ok` hoặc `failed`.
+**Khai báo pool (`reference/pool_declare.py: compile_declaration`):** tách danh sách khoá (dấu phẩy/chấm phẩy/xuống dòng/khoảng trắng, nhãn `nhãn|khoá`, dòng kiểu `.env`) → phân loại từng khoá (`ok`, `duplicate_in_request`, `duplicate_existing`, `too_short`, `invalid`, `placeholder`, chỉ hiện 4 ký tự cuối) → suy ra nhóm hạn mức theo `group_mode` (`per_key`/`single_group`) và cờ điều khoản → kiểm tra `risk_ack` cho cờ rủi ro → biên dịch thành đoạn `pool_config`; dry-run trả bản xem trước, không ghi gì.
 
 **Biên dịch lõi (`compile_style_core`):** lọc theo giai đoạn → dựng khối → nếu vượt trần thì lược `may`, `should`, ví dụ (giữ 2), ví dụ còn lại, ghi chú; `must` và chính sách thuật ngữ không bao giờ bị lược.
 
@@ -178,12 +180,6 @@ Tổng MVP đến cổng A: khoảng **11-14 tuần** với 1-2 dev (bản 0.1 �
 - LiteLLM Router (cân bằng tải, cooldown, fallback, Redis): https://docs.litellm.ai/docs/routing
 - Sự cố chuỗi cung ứng LiteLLM trên PyPI, 24/03/2026: https://securitylabs.datadoghq.com/articles/litellm-compromised-pypi-teampcp-supply-chain-campaign/ ; https://www.bitsight.com/blog/litellm-versions-1-82-7-1-82-8-supply-chain-compromise
 - Con số "khoảng 40 yêu cầu/phút" của endpoint miễn phí NVIDIA là báo cáo của cộng đồng, **không phải số công bố**: https://learningaiworld.com/blog-nvidia-build-endpoints-2026-en/
-
-**Model dịch máy NVIDIA Riva Translate (kiểm tra ngày 02/10/2026)**
-
-- Model card (ngôn ngữ, chat template, few-shot, FLORES-101, giấy phép): https://huggingface.co/nvidia/Riva-Translate-4B-Instruct-v2
-- Trang API (kiến trúc, ngữ cảnh 8K, "sẵn sàng cho mục đích thương mại"): https://docs.api.nvidia.com/nim/reference/nvidia-riva-translate-4b-instruct-v2
-- Trang model trên danh mục (Free Endpoint, giới hạn tốc độ, điều khoản): https://build.nvidia.com/nvidia/riva-translate-4b-instruct-v2
 
 **Pháp lý: hướng dẫn thi hành Luật Bảo vệ dữ liệu cá nhân**
 

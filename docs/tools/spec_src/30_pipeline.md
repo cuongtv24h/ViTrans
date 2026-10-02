@@ -10,8 +10,7 @@ tải lên / dán
     │
 [extract] → [profile] → [segment] → [glossary] ──(cổng: người dùng duyệt thuật ngữ)──┐
                                                                                       ▼
- mức full_translation :  [translate = (bản thô của model dịch máy → LLM hiệu đính P11)
-                                       hoặc dịch trực tiếp P9] ────────────────▶ [assemble]
+ mức full_translation :  [translate = dịch trực tiếp P9] ──────────────────────────────▶ [assemble]
  mức 2-4 (tổng hợp)   :  [map] → [consolidate] → [write] → [verify] ⇄ [repair] → [assemble]
 ```
 
@@ -21,7 +20,7 @@ Nguyên tắc xuyên suốt:
 2. **Mọi thứ model sinh ra đều bị nghi ngờ cho đến khi code kiểm tra:** trích đoạn có thật trong nguồn (`reference/quote_verify.py`), con số có trong nguồn (`reference/numbers_check.py`), thuật ngữ đúng glossary (`reference/glossary_lint.py`).
 3. **Mỗi giai đoạn là điểm lưu (checkpoint):** kết quả ghi vào CSDL; job chết giữa chừng chạy lại từ giai đoạn dở dang, không làm lại từ đầu, không tính tiền hai lần (§12).
 4. **Dữ liệu người dùng luôn là DỮ LIỆU, không phải chỉ thị:** đặt trong thẻ, schema đầu ra cứng, không cấp công cụ cho model, kiểm tra đầu ra (§14.2).
-5. **Khâu phụ không được làm chết khâu chính.** Bản dịch thô (§18), khâu OCR cho trang thường, và mọi bước chỉ nhằm tiết kiệm hay nâng chất lượng đều phải có đường quay về cách làm cơ bản; hạn mức nhà cung cấp hết thì task được hoãn (`defer_task`), không bị tính là lỗi (§17.8).
+5. **Khâu phụ không được làm chết khâu chính.** Khâu OCR cho trang thường và mọi bước chỉ nhằm tiết kiệm hay nâng chất lượng đều phải có đường quay về cách làm cơ bản; hạn mức nhà cung cấp hết thì task được hoãn (`defer_task`), không bị tính là lỗi (§17.8).
 
 | Giai đoạn | Đầu vào | Đầu ra | Prompt | Song song | `task_key` |
 |---|---|---|---|---|---|
@@ -34,7 +33,7 @@ Nguyên tắc xuyên suốt:
 | `write` | kế hoạch + unit | `report_blocks` | P4 | theo mục | `S03` |
 | `verify` | khối + nguồn | verdict, issues, coverage | P5, P6 + kiểm tra tất định | theo mục | `S03:v1` |
 | `repair` | issues | bản vá | P7 | theo mục | `S03:r1` |
-| `translate` | segment (nhỏ hơn), bản thô của model dịch máy (nếu có) | `translation_items` | P11 (đoạn có bản thô) hoặc P9 (không có); bước phụ bản thô: §18 | theo segment | `SEG-007` |
+| `translate` | segment (nhỏ hơn) | `translation_items` | P9 | theo segment | `SEG-007` |
 | `assemble` | tất cả | `reports.markdown`, ghi chú phạm vi | P8 | 1 | `assemble` |
 
 ### 6.1 `extract` — bóc tách và chuẩn hoá
@@ -173,15 +172,15 @@ Với mỗi segment (song song, tối đa `per_job_concurrency`):
 
 Một task `translate` xử lý MỘT segment nhỏ (mục tiêu 4000 token, để đầu ra không chạm trần và dễ căn 1:1) và chạy song song giữa các segment. Liên tục mạch lạc nhờ `context_before` (2 đoạn nguồn trước đó, chỉ đọc), glossary, Lõi văn phong; `first_use_terms` tính tất định theo thứ tự đoạn.
 
+Mức dịch đầy đủ **chỉ dùng LLM dịch trực tiếp (P9)**. Khâu bản dịch thô của model dịch máy đã được cân nhắc và loại khỏi phạm vi (§18): không rẻ hơn khi LLM vẫn viết lại toàn bộ, không giảm số lời gọi, và điều khoản endpoint miễn phí chỉ cho thử nghiệm.
+
 **Các bước trong một task (mỗi bước ghi điểm lưu để chạy lại không làm lại):**
 
-1. **Bản thô (tuỳ chọn, §18).** Nếu đủ điều kiện (cặp ngôn ngữ được model dịch máy hỗ trợ, `app_settings.draft_mt_mode = auto`, recipe không tắt, pool có deployment `mt_draft` hợp lệ ở cổng và chế độ riêng tư của job), gọi model dịch máy cho các đoạn văn xuôi của segment và lưu `translation_items.draft_vi`. Bước này **không bao giờ làm task thất bại**: đoạn nào không có bản thô (lỗi, bị bỏ qua, quá hạn, breaker mở, loại đoạn không dịch máy) sẽ được dịch trực tiếp.
-2. **Chọn prompt.** Có ít nhất một bản thô → **P11** (hiệu đính; đoạn không có bản thô được dịch trực tiếp trong cùng lời gọi, `edit_level = direct`). Không có bản thô nào → **P9** như trước.
-3. **Gọi LLM qua pool** (profile `writer`, `privacy_class` của job). Pool chưa có chỗ thì task được hoãn bằng `defer_task` (không tính lần thử).
-4. **Kiểm tra tất định lên KẾT QUẢ CUỐI** (cho cả đoạn LLM viết lại lẫn đoạn `keep_draft`): mỗi pid đầu vào xuất hiện đúng một lần; không rỗng; tỷ lệ độ dài `len(vi)/len(src)` ∈ [0.6, 2.2] với đoạn ≥ 40 ký tự (dưới 0.6 nghi cắt bớt, trên 2.2 nghi thêm nội dung); số liệu (`unverified_numbers` và số nguồn bị mất); lint glossary; đoạn dài không có dấu tiếng Việt thì nghi chưa dịch. Vi phạm: chạy lại segment **một lần** kèm phản hồi (với đoạn `keep_draft` vi phạm thì chạy lại đoạn đó ở chế độ `full`); vẫn lỗi thì đánh `flagged` từng đoạn.
-5. Lưu `translation_items` (kèm `draft_status`, `draft_engine`, `edit_level`) và phát sự kiện `warning` gộp theo segment nếu có đoạn quay về dịch trực tiếp (`data.code = draft_fallback`).
+1. **Gọi LLM qua pool** (profile `writer`, `privacy_class` của job). Pool chưa có chỗ thì task được hoãn bằng `defer_task` (không tính lần thử).
+2. **Kiểm tra tất định lên kết quả:** mỗi pid đầu vào xuất hiện đúng một lần; không rỗng; tỷ lệ độ dài `len(vi)/len(src)` ∈ [0.6, 2.2] với đoạn ≥ 40 ký tự (dưới 0.6 nghi cắt bớt, trên 2.2 nghi thêm nội dung); số liệu (`unverified_numbers` và số nguồn bị mất); lint glossary; đoạn dài không có dấu tiếng Việt thì nghi chưa dịch. Vi phạm: chạy lại segment **một lần** kèm phản hồi; vẫn lỗi thì đánh `flagged` từng đoạn.
+3. Lưu `translation_items` và số liệu vào `job_stages.metrics` của giai đoạn `translate`.
 
-> **15% đoạn bị `flagged` sau chạy lại → hạng C.** Bản dịch lưu ở `translation_items`; xuất ra Markdown theo cấu trúc `doc_sections`; chế độ song ngữ ghép với `doc_paragraphs` khi còn. Số liệu của bước bản thô (cửa sổ, lời gọi, chia đôi, đoạn quay về dịch trực tiếp, lần breaker mở) được gộp vào `job_stages.metrics` của giai đoạn `translate` và vào `reports.stats.draft`.
+> **15% đoạn bị `flagged` sau chạy lại → hạng C.** Bản dịch lưu ở `translation_items`; xuất ra Markdown theo cấu trúc `doc_sections`; chế độ song ngữ ghép với `doc_paragraphs` khi còn.
 
 ### 6.11 `assemble` — hoàn thiện
 
@@ -201,16 +200,7 @@ pipeline:
   write:      { length_soft_tolerance: 0.20, length_hard_tolerance: 0.35 }
   verify:     { sample_rate: 1.0, coverage_sample_rate: 0.10, max_source_paragraphs_per_call: 60, diacritic_ratio_min: 0.12 }
   repair:     { max_rounds: 2 }
-  translate:  { length_ratio_range: [0.6, 2.2], flagged_ratio_for_grade_c: 0.15, postedit_mode: full }   # full | selective (thử nghiệm, §18.6)
-  draft:      # khâu bản dịch thô (§18); cờ tổng nằm ở app_settings.draft_mt_mode (off | auto), mặc định off tới khi bake-off đạt
-    levels: [full_translation]
-    lang_pairs: [en-vi]
-    window_src_tokens: 900
-    max_para_tokens: 1500
-    segment_deadline_s: 240
-    max_pool_wait_s: 20            # chờ pool quá mức này thì bỏ qua bản thô, không chờ
-    fewshot: off                   # off | exemplars (dùng ví dụ mẫu của Lõi văn phong làm few-shot cho model dịch máy)
-    breaker: { consecutive: 5, window: 20, rate: 0.5, cooldown_s: 120, max_cooldown_s: 900 }
+  translate:  { length_ratio_range: [0.6, 2.2], flagged_ratio_for_grade_c: 0.15 }
   pool:       # xem §17; ở đây chỉ phần pipeline cần biết
     window_scale: 1.0
     verify_batch: 1
@@ -230,7 +220,6 @@ pipeline:
 | 429, 5xx, timeout, khoá bị từ chối | Do **pool** xử lý (§17.7): cooldown đúng loại, circuit breaker, cách ly khoá, chuyển ngay sang deployment khác (`exclude`); không còn `fallback_model` đơn lẻ |
 | Pool chưa có chỗ (hết RPM/TPM/RPD hoặc đang cooldown) | Hoãn task bằng `defer_task` tới `Wait.until`, **không** tính lần thử; chờ quá `max_pool_wait_hours` thì chuyển tầng trả phí (nếu được phép và chưa chạm trần) hoặc job `failed` mã `pool_wait_exceeded` kèm hoàn tín dụng |
 | Không deployment nào đủ điều kiện (ví dụ job `private` nhưng không còn nhóm `no_training`) | Job `failed` mã `pool_capacity_exceeded` ngay ở lúc tạo nếu phát hiện được (ước tính), hoàn tín dụng đầy đủ; **không bao giờ** rò sang nhóm không đủ điều kiện để cứu job |
-| Khâu bản dịch thô lỗi, quá hạn, bị bỏ qua, breaker mở | Đoạn quay về dịch trực tiếp (P9/P11 `direct`); không ảnh hưởng hạng chất lượng; ghi số liệu vào `reports.stats.draft` (§18.5) |
 | Chạm trần chi phí job (×1.5 ước tính) | Dừng job (`failed`, mã `job_cost_cap`), hoàn tín dụng phần chưa dùng theo §12.6, báo Admin |
 | Chạm trần chi tiêu ngày | Job đang chạy xong bình thường; job mới nhận 503 `spend_cap_reached` |
 | Worker chết giữa chừng | Mất heartbeat > 3 phút → `reclaim_stale_tasks`; chạy lại task (idempotent); quá `max_attempts` → `failed` |
@@ -322,9 +311,6 @@ Toàn văn ở **Phụ lục A** và trong `prompts/`. Mỗi prompt là một t�
 | `stats_json`, `core_topics`, `condensed_kinds` (P8) | Số liệu do code tính |
 | `level_policy` | Khối văn bản ở §7.3 theo mức |
 | `style_core` | Văn bản biên dịch từ phiên bản Lõi văn phong đã ghim cho job, đúng giai đoạn của prompt (`compile_style_core(content, stage)`, §19.7); mặc định lõi trung tính |
-| `draft_text` (P11) | `[Pxxxxxx] bản thô` cách nhau một dòng trống, **chỉ cho pid có bản thô** (`format_draft_text`) |
-| `draft_flags_json` (P11) | Object `{pid: [cờ,...]}` do code tính: `numbers_missing:...`, `numbers_added:...`, `forbidden_variant:...`, `untranslated_source_term:...`, `english_residue` |
-| `edit_mode` (P11) | `full` hoặc `selective` (§18.6) |
 | `mode`, `domain_brief`, `sample_excerpts`, `reference_pairs_json`, `existing_core_json`, `glossary_digest_json`, `feedback_digest_json` (P12) | Đầu vào của đề xuất Lõi văn phong; `sample_excerpts` đánh ID `[S01]`, cặp tham chiếu có ID `REF01`, phản hồi có ID `FB01` (§19.4) |
 | `merged_candidates_json`, `existing_glossary_json`, `terminology_policy_json`, `max_entries` (P13) | Đầu ra tất định của `merge_candidates()` kèm ngữ cảnh có `ctx_id` (§19.5) |
 | `custom_instructions` | Chuỗi người dùng nhập (≤ 1000 ký tự), đặt trong `<user_preferences>` |

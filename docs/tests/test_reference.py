@@ -106,6 +106,12 @@ def test_lint_missing_original_on_first_use():
     text = "Trung tâm Thái dương vận hành theo sóng."
     assert kinds(lint(text, [SOLAR], first_use_terms={"Solar Plexus"})) == ["missing_original_on_first_use"]
 
+def test_lint_does_not_require_parenthesis_when_forms_are_identical():
+    """'pid' -> 'pid': bắt buộc viết 'pid (pid)' là vô nghĩa (SPEC §6.8 D4, làm rõ 02/10/2026)."""
+    term = GlossaryEntry("pid", "pid", keep_original=True)
+    assert lint("Mọi pid đầu vào phải xuất hiện đúng một lần.", [term], first_use_terms={"pid"}) == []
+
+
 
 def test_lint_not_first_use_does_not_require_parenthesis():
     assert lint("Trung tâm Thái dương vận hành theo sóng.", [SOLAR], first_use_terms=set()) == []
@@ -252,23 +258,8 @@ def test_wire_schema_rejects_oneof():
         to_wire_schema(bad, {bad["$id"]: bad})
 
 
-# ------------------------------------------------------------------ dịch đầy đủ: ba chế độ, số lời gọi, dung lượng (SPEC §17-18)
-from reference.estimator import docs_per_day, estimate_calls, estimate_translation  # noqa: E402
-
-
-def test_postedit_full_is_not_cheaper_than_direct_translation():
-    d = estimate_translation(90_000, "direct", PRICES[0])
-    f = estimate_translation(90_000, "postedit_full", PRICES[0])
-    assert f.tokens_out == d.tokens_out and f.tokens_in > d.tokens_in and f.cost_usd > d.cost_usd  # bản thô làm vào tăng, ra không giảm
-
-
-def test_selective_postedit_saves_only_when_most_drafts_are_kept():
-    d = estimate_translation(90_000, "direct", PRICES[0]).cost_usd
-    assert estimate_translation(90_000, "postedit_selective", PRICES[0], keep_rate=0.7).cost_usd < 0.8 * d
-    assert estimate_translation(90_000, "postedit_selective", PRICES[0], keep_rate=0.5).cost_usd < d
-    assert estimate_translation(90_000, "postedit_selective", PRICES[0], keep_rate=0.05).cost_usd > d  # bản thô quá tệ: tốn hơn cả dịch thẳng
-    with pytest.raises(ValueError):
-        estimate_translation(100, "magic", PRICES[0])
+# ------------------------------------------------------------------ dung lượng pool: số lời gọi, số tài liệu/ngày (SPEC §17)
+from reference.estimator import docs_per_day, estimate_calls  # noqa: E402
 
 
 def test_estimate_calls_scales_with_size_and_window_scale():
@@ -287,11 +278,3 @@ def test_docs_per_day_takes_the_binding_constraint():
     assert docs_per_day(None, None, 77, 1) == float("inf")
 
 
-def test_postedit_full_premium_quoted_in_the_spec_is_about_fourteen_percent():
-    d = estimate_translation(90_000, "direct", PRICES[0]).cost_usd
-    f = estimate_translation(90_000, "postedit_full", PRICES[0]).cost_usd
-    assert 1.10 < f / d < 1.20  # SPEC §18.1 nêu "đắt hơn khoảng 14%"
-    # hoà vốn của chế độ chọn lọc quanh mức giữ 20% (SPEC §18.3)
-    lo = estimate_translation(90_000, "postedit_selective", PRICES[0], keep_rate=0.15).cost_usd
-    hi = estimate_translation(90_000, "postedit_selective", PRICES[0], keep_rate=0.25).cost_usd
-    assert lo > d > hi

@@ -31,7 +31,7 @@ def lint(text_vi: str, entries: list[GlossaryEntry], first_use_terms: frozenset[
     """Lint một đoạn/mục tiếng Việt theo glossary.
 
     first_use_terms: tập source_term mà MỤC NÀY là nơi dùng đầu tiên trong toàn báo cáo
-    (tính tất định từ thứ tự mục trong ReportPlan) -> với keep_original phải có dạng 'target (source)'.
+    (tính tất định từ thứ tự mục trong ReportPlan) -> với keep_original và target khác source phải có dạng 'target (source)'.
     """
     t = nfc(text_vi)
     issues: list[LintIssue] = []
@@ -43,11 +43,18 @@ def lint(text_vi: str, entries: list[GlossaryEntry], first_use_terms: frozenset[
 
         target_present = re.search(_pat(e.target_term), t, flags) is not None
         paren = rf"{re.escape(nfc(e.target_term))}\s*\(\s*{re.escape(nfc(e.source_term))}\s*\)"
-        if e.keep_original and e.source_term in first_use_terms and target_present:
-            if not re.search(paren, t, flags):
-                issues.append(
-                    LintIssue("missing_original_on_first_use", e.source_term, f"lần dùng đầu phải là '{e.target_term} ({e.source_term})'")
-                )
+        # nguồn và đích trùng nhau (ví dụ 'pid' -> 'pid') thì dạng 'x (x)' là vô nghĩa, không bắt buộc
+        same_form = nfc(e.source_term).casefold() == nfc(e.target_term).casefold()
+        if (
+            e.keep_original
+            and not same_form
+            and e.source_term in first_use_terms
+            and target_present
+            and not re.search(paren, t, flags)
+        ):
+            issues.append(
+                LintIssue("missing_original_on_first_use", e.source_term, f"lần dùng đầu phải là '{e.target_term} ({e.source_term})'")
+            )
 
         if nfc(e.source_term).casefold() != nfc(e.target_term).casefold():
             # xoá các dạng hợp lệ 'target (source)' rồi xem còn source_term trần nào không

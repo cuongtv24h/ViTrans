@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://visynth.example/schemas/pool_config.schema.json",
   "title": "PoolConfig",
-  "description": "Cấu hình LLM Pool: nhà cung cấp, model, nhóm hạn mức (quota group) kèm khoá, deployment (nhóm x model) và profile logic (fast, writer, verifier, ocr, curator, mt_draft) với các tầng định tuyến. Dùng để nhập/xuất qua Admin API và để seed CSDL. Khoá API KHÔNG bao giờ nằm trong tệp này: chỉ có tham chiếu secret_ref. Mọi con số giới hạn là cấu hình do chủ hệ thống nhập từ bảng điều khiển của nhà cung cấp, không phải hằng số của spec.",
+  "description": "Cấu hình LLM Pool: nhà cung cấp, model, nhóm hạn mức (quota group) kèm khoá, deployment (nhóm x model) và profile logic (fast, writer, verifier, ocr, curator) với các tầng định tuyến. Dùng để nhập/xuất qua Admin API và để seed CSDL. Khoá API KHÔNG bao giờ nằm trong tệp này: chỉ có tham chiếu secret_ref. Mọi con số giới hạn là cấu hình do chủ hệ thống nhập từ bảng điều khiển của nhà cung cấp, không phải hằng số của spec.",
   "type": "object",
   "properties": {
     "version": {

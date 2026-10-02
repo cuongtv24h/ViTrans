@@ -23,7 +23,7 @@
 | `terminology_policy` | Cách trình bày thuật ngữ: `first_use` (`target_with_original`, `target_only`, `original_only`), `unknown_terms` (`flag_for_review`, `translate_with_original`, `keep_original`), `proper_names` (`keep_original`, `translate_known_forms`) | tất cả `unspecified`: để glossary quyết định từng mục |
 | `formatting` | Dấu ngoặc kép, danh sách, cách viết số | tất cả `unspecified` |
 | `rules[]` | Quy tắc ngắn (≤ 400 ký tự): `severity` (`must`/`should`/`may`), `applies_to` (giai đoạn; rỗng = tất cả), `origin` (`human`/`ai`), `reviewed`, `confidence`, lý do | rỗng |
-| `exemplars[]` | Cặp nguồn → đích mẫu do người chọn hoặc xác nhận; làm ví dụ trong prompt và few-shot cho model dịch máy (§18.4) | rỗng |
+| `exemplars[]` | Cặp nguồn → đích mẫu do người chọn hoặc xác nhận; làm ví dụ trong prompt (không còn dùng làm few-shot cho model dịch máy: khâu bản dịch thô đã bỏ, §18) | rỗng |
 | `glossary_refs[]` | Glossary gắn kèm và số hiệu bản phát hành đã ghim (`null` = mới nhất) | rỗng |
 | `limits.compiled_max_chars` | Trần độ dài khối biên dịch (mặc định 6.000) | 6.000 |
 

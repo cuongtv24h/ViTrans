@@ -100,51 +100,6 @@ def estimate(words: int, level: str, price: Price, lang: str = "en") -> Estimate
     )
 
 
-# ----------------------------------------------------------------------------- dịch đầy đủ: so sánh phương án bản thô (SPEC §18; phương án ĐÃ LOẠI, giữ lại làm bằng chứng)
-TRANSLATION_MODES = ("direct", "postedit_full", "postedit_selective")
-WORDS_PER_PARAGRAPH = 60  # trung bình, để ước lượng số dòng 'giữ nguyên' của chế độ chọn lọc
-KEEP_MARKER_TOKENS = 14  # token cho mỗi đoạn giữ nguyên bản thô (pid + action) trong đầu ra chọn lọc
-
-
-@dataclass(frozen=True)
-class TranslationEstimate:
-    mode: str
-    tokens_in: int
-    tokens_out: int
-    cost_usd: float
-    llm_calls: int
-
-
-def estimate_translation(words: int, mode: str, price: Price, lang: str = "en", keep_rate: float = 0.7, segment_tokens: int = 4000) -> TranslationEstimate:
-    """So sánh chi phí LLM của dịch trực tiếp (P9) với phương án "bản thô của model dịch máy rồi LLM hiệu đính" (đã loại khỏi phạm vi, SPEC §18).
-
-    - direct: LLM đọc nguồn, viết toàn bộ bản dịch.
-    - postedit_full: LLM đọc nguồn + bản thô, VẪN viết toàn bộ bản dịch -> đầu vào tăng, đầu ra không giảm: KHÔNG rẻ hơn dịch trực tiếp.
-    - postedit_selective: LLM chỉ viết lại những đoạn cần sửa (1 - keep_rate); đoạn giữ nguyên chỉ tốn vài token đánh dấu.
-      Chỉ có lợi nếu keep_rate đủ cao VÀ chất lượng không giảm (điều kiện xem xét lại: SPEC §18.4).
-    Chi phí của chính model dịch máy không tính ở đây (miễn phí hoặc tự dựng).
-    """
-    if mode not in TRANSLATION_MODES:
-        raise ValueError(f"mode không hợp lệ: {mode}")
-    p = LEVEL_PARAMS["full_translation"]
-    t = words * TOK_PER_SRC_WORD.get(lang, TOK_PER_SRC_WORD["default"])
-    v = words * VI_TOK_PER_SRC_WORD  # token bản dịch tiếng Việt
-    tin = p["input_x"] * t
-    tout_full = p["think"] * (p["out_fixed_x"] * t + v)
-    if mode == "direct":
-        tout = tout_full
-    else:
-        tin += v  # bản thô được đưa vào prompt
-        if mode == "postedit_full":
-            tout = tout_full
-        else:
-            paras = words / WORDS_PER_PARAGRAPH
-            tout = p["think"] * (p["out_fixed_x"] * t + v * (1 - keep_rate) + paras * keep_rate * KEEP_MARKER_TOKENS)
-    calls = max(1, math.ceil(t / segment_tokens)) * 1.1
-    cost = tin / 1e6 * price.input_per_mtok + tout / 1e6 * price.output_per_mtok
-    return TranslationEstimate(mode, round(tin), round(tout), round(cost, 4), math.ceil(calls))
-
-
 # ----------------------------------------------------------------------------- số lời gọi LLM và dung lượng pool (SPEC §17.10)
 MAP_SEGMENT_TOKENS = 8000
 GLOSSARY_WINDOW_TOKENS = 300_000
@@ -162,7 +117,7 @@ def estimate_calls(words: int, level: str, lang: str = "en", window_scale: float
     t = words * TOK_PER_SRC_WORD.get(lang, TOK_PER_SRC_WORD["default"])
     gloss = max(1, math.ceil(t / (GLOSSARY_WINDOW_TOKENS * window_scale)))
     if level == "full_translation":
-        # đầu ra của một segment dịch xấp xỉ 1.5 lần đầu vào nên segment dịch bị chặn ở 8000 token (đầu ra < 20000 token của P9/P11)
+        # đầu ra của một segment dịch xấp xỉ 1.5 lần đầu vào nên segment dịch bị chặn ở 8000 token (đầu ra < 20000 token của P9)
         return math.ceil(1 + gloss + 1.1 * math.ceil(t / min(4000 * window_scale, 8000)))
     n_map = math.ceil(t / (MAP_SEGMENT_TOKENS * window_scale))
     n_sec = min(20, max(4, round(report_budget_words(words, level) / WORDS_PER_SECTION)))

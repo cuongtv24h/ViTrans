@@ -30,7 +30,7 @@ succeeded | failed | canceled ──▶ expired   (khi quá hạn lưu trữ)
 | `write` (một mục) | **Phương án dự phòng tất định:** hiển thị `statement_vi` của các unit trong mục dưới dạng danh sách gạch đầu dòng (các câu này đã có bằng chứng nguyên văn), đánh `degraded_section` |
 | `verify` (LLM lỗi) | Bỏ bước LLM cho mục đó, đánh "chưa kiểm chứng đầy đủ", **hạng tối đa B** |
 | `repair` | Giữ nguyên, đánh cờ khối còn lỗi |
-| `translate` (một segment) | Bước bản thô lỗi, quá hạn hoặc bị bỏ qua → các đoạn đó dịch trực tiếp (**không** phải lỗi, không ảnh hưởng hạng). LLM dịch/hiệu đính lỗi → chạy lại; vẫn hỏng → đánh `flagged`; > 15% → hạng C |
+| `translate` (một segment) | LLM dịch lỗi → chạy lại; vẫn hỏng → đánh `flagged`; > 15% → hạng C |
 | `assemble` | Job `failed` (thường do lỗi hệ thống; hoàn tín dụng đầy đủ) |
 
 ### 12.3 Vòng nhận việc của worker
@@ -109,7 +109,7 @@ Trước mỗi task: `if jobs.actual_shadow_usd > jobs.max_cost_usd: raise Fatal
 
 <!-- COST_TABLE -->
 
-**Bảng trên là chi phí theo giá tham chiếu (một model trả phí).** Chi phí tiền thật thấp hơn tuỳ tỷ lệ lời gọi do nhóm miễn phí phục vụ: mô phỏng ở §17.12 cho thấy cùng 10 tài liệu 300 trang tốn khoảng 3 USD thay vì 7,4 USD khi có hai dự án free làm tầng đầu, và 0 USD khi đủ dự án free, nhưng free tier có hạn mức nhỏ, đổi được và kèm điều kiện riêng tư (§17.3). Với mức dịch đầy đủ có bản dịch thô, xem bảng ba chế độ ở §18.3.
+**Bảng trên là chi phí theo giá tham chiếu (một model trả phí).** Chi phí tiền thật thấp hơn tuỳ tỷ lệ lời gọi do nhóm miễn phí phục vụ: mô phỏng ở §17.12 cho thấy cùng 10 tài liệu 300 trang tốn khoảng 3 USD thay vì 7,4 USD khi có hai dự án free làm tầng đầu, và 0 USD khi đủ dự án free, nhưng free tier có hạn mức nhỏ, đổi được và kèm điều kiện riêng tư (§17.3). Mức dịch đầy đủ dùng LLM dịch trực tiếp (P9), cùng một bảng giá.
 
 Ghi chú: ước tính thô của spec (token tiếng Việt ≈ 1.8 token/từ nguồn khi dịch, số lần đọc nguồn theo từng mức, thinking +10-30%), chưa tính OCR. **Cloud Translation NMT** tính 20 USD/1M ký tự (500k ký tự đầu mỗi tháng miễn phí): một cuốn ~90k từ ≈ 540k ký tự ≈ 11 USD nếu đã hết hạn mức miễn phí, trong khi LLM Flash dịch toàn văn cùng khối lượng chỉ khoảng 0.9 USD theo bảng trên. OCR bằng Gemini cho PDF scan: mỗi trang quét ≈ 258 token ảnh đầu vào cộng chữ đầu ra, cỡ 0.2-0.5 USD cho 300 trang (ước tính).
 
@@ -134,7 +134,7 @@ Chi phí LLM mỗi tín dụng ở mức mặc định khoảng 0.0025 USD (giá
 | Cho phép chuyển sang tầng trả phí khi tầng miễn phí hết hạn mức | bật | `paid_spill_enabled` |
 | Tổng thời gian chờ hạn mức tối đa của một job | 12 giờ | `max_pool_wait_hours` |
 | Cổng triển khai hiện hành | `dev` | `deploy_gate` |
-| Khâu bản dịch thô | tắt tới khi bake-off đạt | `draft_mt_mode` |
+| Cho phép dùng nhóm gắn cờ rủi ro (`multi_account_risk`, `trial_only`) ở cổng công khai (B/C) | tắt | `pool_allow_risk_at_public_gates` |
 | Nước bị hạn chế dùng free tier của Gemini | EEA, Thụy Sĩ, Anh | `restricted_free_tier_countries` |
 | Đăng nhập | 10 lần / 10 phút / IP | Redis |
 | Đổi mã mời | 5 lần / giờ / người dùng; 20 lần / giờ / IP | Redis |
@@ -147,7 +147,7 @@ Chi phí LLM mỗi tín dụng ở mức mặc định khoảng 0.0025 USD (giá
 
 | Cổng | Cách vào | Cài đặt | Điều kiện sang cổng sau |
 |---|---|---|---|
-| **A. Closed beta** (20-50 người) | Chỉ có mã mời (300-500 tín dụng/mã) | Trần 10-20 USD/ngày; **cả bốn mức bật**; nhóm free được dùng theo `allowed_gates` (kể cả khoá gắn `multi_account_risk`, chủ hệ thống tự chịu rủi ro tài khoản); mặc định `standard` kèm đồng ý riêng; khâu bản dịch thô bật thử nếu đã chấp nhận điều khoản NVIDIA (§18.2) | Đạt KPI §2.2 trên ≥ 100 job thật; chi phí thật/ước tính trong ±35%; tải hỗ trợ chấp nhận được |
+| **A. Closed beta** (20-50 người) | Chỉ có mã mời (300-500 tín dụng/mã) | Trần 10-20 USD/ngày; **cả bốn mức bật**; nhóm free được dùng theo `allowed_gates` (kể cả khoá gắn `multi_account_risk`, chủ hệ thống tự chịu rủi ro tài khoản); mặc định `standard` kèm đồng ý riêng; nhóm miễn phí gắn cờ rủi ro chỉ được bật khi có xác nhận `risk_ack` (§17.14) | Đạt KPI §2.2 trên ≥ 100 job thật; chi phí thật/ước tính trong ±35%; tải hỗ trợ chấp nhận được |
 | **B. Đăng ký mở** | Google/email + xác minh email + Turnstile | 100 tín dụng tặng; trần 20-50 USD/ngày; giới hạn số đăng ký mới/ngày; hàng chờ nếu chạm trần; **mặc định `private`** cho người mới (`standard` là lựa chọn có đồng ý riêng); nhóm gắn `multi_account_risk` và `trial_only` tự bị loại (`allowed_gates`) | Chi phí/người dùng ổn định; không có sự cố pháp lý; checklist §14.5 đạt |
 | **C. Bán tín dụng** | Thanh toán (PayOS/VNPay/MoMo cho người dùng Việt Nam, Stripe quốc tế) | Giá bán ≥ 3× chi phí (§13.3); hoá đơn; chính sách hoàn tiền; pool chủ yếu trả phí, free chỉ cho `standard` có đồng ý | Có pháp nhân, tài khoản thanh toán, điều khoản bán hàng |
 
@@ -242,7 +242,7 @@ Quy tắc theo **chế độ riêng tư của job** (chi tiết và nguồn: §1
 
 **Log:** JSON có `job_id`, `stage`, `task_id`, `prompt_id`, `model`; **không** chứa nội dung tài liệu.
 
-**Chỉ số (Prometheus/OpenTelemetry):** `visynth_job_duration_seconds{level,stage}`, `visynth_llm_tokens_total{model,prompt_id,direction}`, `visynth_llm_cost_usd_total{prompt_id}`, `visynth_llm_errors_total{code}`, `visynth_queue_wait_seconds`, `visynth_quality_grade_total{grade}`, `visynth_spend_cap_ratio`, `visynth_ocr_pages_total`, `visynth_credit_refund_total{reason}`; **pool:** `visynth_pool_headroom{deployment}`, `visynth_pool_calls_total{deployment,outcome}`, `visynth_pool_wait_seconds`, `visynth_pool_circuit_open{deployment}`, `visynth_pool_spill_total{from_tier,to_tier}`, `visynth_pool_shadow_usd_total{tier}`, `visynth_pool_private_violations_total` (phải luôn bằng 0); **bản dịch thô:** `visynth_draft_paragraphs_total{status}`, `visynth_draft_breaker_open`.
+**Chỉ số (Prometheus/OpenTelemetry):** `visynth_job_duration_seconds{level,stage}`, `visynth_llm_tokens_total{model,prompt_id,direction}`, `visynth_llm_cost_usd_total{prompt_id}`, `visynth_llm_errors_total{code}`, `visynth_queue_wait_seconds`, `visynth_quality_grade_total{grade}`, `visynth_spend_cap_ratio`, `visynth_ocr_pages_total`, `visynth_credit_refund_total{reason}`; **pool:** `visynth_pool_headroom{deployment}`, `visynth_pool_calls_total{deployment,outcome}`, `visynth_pool_wait_seconds`, `visynth_pool_circuit_open{deployment}`, `visynth_pool_spill_total{from_tier,to_tier}`, `visynth_pool_shadow_usd_total{tier}`, `visynth_pool_private_violations_total` (phải luôn bằng 0).
 
 **Bảng điều khiển:** chi phí/ngày và theo prompt; số job và tỷ lệ thành công; phân bố hạng A/B/C; p50/p95 thời gian theo mức; hàng đợi; lỗi theo mã; phần trăm tài liệu cần OCR.
 
@@ -261,9 +261,8 @@ Quy tắc theo **chế độ riêng tư của job** (chi tiết và nguồn: §1
 | Toàn bộ nhóm của một tier không còn khoá hoạt động hoặc circuit mở > 15 phút | Cảnh báo |
 | Tỷ lệ lời gọi phải chuyển sang trả phí > 50% trong ngày | Cảnh báo (free tier đã cạn hoặc hạn mức đã đổi: xem lại `limits`) |
 | Số lỗi 429 từ nhà cung cấp > 2% lời gọi | Cảnh báo (cấu hình `limits` đang cao hơn thực tế, `limit_scale` đang tự thu hẹp) |
-| Tỷ lệ đoạn quay về dịch trực tiếp > 30% trong ngày (khi bản thô bật) | Cảnh báo (dịch máy kém hoặc quá tải: cân nhắc tắt `draft_mt_mode`) |
 
-**Runbook cần có:** (1) một nhà cung cấp sập hoặc 429 kéo dài → pool tự chuyển tầng; kiểm tra `llm_incidents`, hạ `weight` hoặc tắt deployment, thông báo trạng thái; (2) chạm trần chi tiêu; (3) job kẹt (kiểm tra `reclaim_stale_tasks`); (4) phát hành prompt xấu → hoàn tác về phiên bản trước (§8.3); (5) xử lý `/takedown`; (6) nghi lộ khoá → xoay khoá, rà `llm_calls`; (7) khôi phục CSDL; (8) khoá bị cách ly → xác minh với nhà cung cấp, thay khoá, gỡ `quarantined`; (9) nhà cung cấp đổi hạn mức hoặc điều khoản → cập nhật `limits`/`tos_flags`/`data_policy`, chạy lại kiểm định (`probe`), ghi ngày kiểm tra; (10) khâu bản thô chết hàng loạt → xác nhận fallback đang chạy, tắt `draft_mt_mode` nếu kéo dài; (11) VPS chết hoặc đĩa đầy (§20.7).
+**Runbook cần có:** (1) một nhà cung cấp sập hoặc 429 kéo dài → pool tự chuyển tầng; kiểm tra `llm_incidents`, hạ `weight` hoặc tắt deployment, thông báo trạng thái; (2) chạm trần chi tiêu; (3) job kẹt (kiểm tra `reclaim_stale_tasks`); (4) phát hành prompt xấu → hoàn tác về phiên bản trước (§8.3); (5) xử lý `/takedown`; (6) nghi lộ khoá → xoay khoá, rà `llm_calls`; (7) khôi phục CSDL; (8) khoá bị cách ly → xác minh với nhà cung cấp, thay khoá, gỡ `quarantined`; (9) nhà cung cấp đổi hạn mức hoặc điều khoản → cập nhật `limits`/`tos_flags`/`data_policy`, chạy lại kiểm định (`probe`), ghi ngày kiểm tra; (10) VPS chết hoặc đĩa đầy (§20.7).
 
 ---
 
@@ -294,7 +293,7 @@ Chạy tập con 6 tài liệu và **chặn phát hành** khi đổi prompt, mod
 
 ### 16.4 Bake-off chọn model (Giai đoạn 0)
 
-3 cấu hình profile × 5 tài liệu; chấm mù theo cặp so với bản tham chiếu; chọn cấu hình **rẻ nhất đạt ngưỡng** §2.2. Thử riêng một `verifier` thuộc họ model khác `writer` để xem có giảm lỗi tương quan không. Với pool, bài này gồm thêm: (a) chạy bài kiểm định (`probe`, §17.9) cho từng deployment ứng viên và ghi điểm `json`, `vi_write`, `long_context`; (b) đo hạn mức thật (đọc bảng điều khiển, đối chiếu với lỗi 429) và nhập vào `limits`; (c) đo `tokenizer_factor` thật; (d) thí nghiệm bản dịch thô (§18.8); (e) khởi tạo Lõi văn phong và glossary cho lĩnh vực đầu tiên bằng quy trình §19.9 rồi chạy golden set. Ghi kết quả vào `eval/` và cập nhật `pool_config` (`quality`, `limits`, `tiers`).
+3 cấu hình profile × 5 tài liệu; chấm mù theo cặp so với bản tham chiếu; chọn cấu hình **rẻ nhất đạt ngưỡng** §2.2. Thử riêng một `verifier` thuộc họ model khác `writer` để xem có giảm lỗi tương quan không. Với pool, bài này gồm thêm: (a) chạy bài kiểm định (`probe`, §17.9) cho từng deployment ứng viên và ghi điểm `json`, `vi_write`, `long_context`; (b) đo hạn mức thật (đọc bảng điều khiển, đối chiếu với lỗi 429) và nhập vào `limits`; (c) đo `tokenizer_factor` thật; (d) chạy `declare` + `probe` cho các khoá thật, ghi ngày kiểm tra vào `notes` của nhóm (§17.14); (e) khởi tạo Lõi văn phong và glossary cho lĩnh vực đầu tiên bằng quy trình §19.9 rồi chạy golden set. Ghi kết quả vào `eval/` và cập nhật `pool_config` (`quality`, `limits`, `tiers`).
 
 ### 16.5 Vòng phản hồi trực tuyến
 

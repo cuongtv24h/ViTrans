@@ -1,0 +1,10 @@
+# Phụ thuộc để chạy bộ kiểm tra của bộ đặc tả (tools/validate_spec.py, tools/build_spec.py, tests/).
+# Cài:  pip install -r docs/requirements.txt
+jsonschema>=4.20
+pyyaml>=6
+openapi-spec-validator>=0.7
+pytest>=8
+rapidfuzz>=3
+pglast>=6
+psycopg[binary]>=3.1
+cryptography>=42

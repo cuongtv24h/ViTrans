@@ -1,8 +1,8 @@
-# ViSynth — Đặc tả kỹ thuật & sản phẩm (v0.2)
+# ViSynth — Đặc tả kỹ thuật & sản phẩm (v0.3)
 
 > **Tên tạm:** ViSynth. Ứng dụng web "Chuyển ngữ & Tổng hợp" tài liệu sang tiếng Việt bằng LLM: người dùng tải PDF/DOCX/TXT... hoặc dán văn bản, hệ thống bóc tách rồi tạo **Báo cáo tổng hợp chuyên sâu** (hoặc bản dịch đầy đủ) bằng tiếng Việt, có thuật ngữ nhất quán, có trích dẫn nguồn và có bước kiểm chứng.
 >
-> **Phiên bản:** 0.2, ngày 02/10/2026 (bản 0.1 cùng ngày; thay đổi ở §0.1). **Trạng thái:** bản nháp để chốt với chủ sản phẩm. Mọi số liệu về giá, giới hạn, pháp lý của bên thứ ba được kiểm tra ngày 02/10/2026 và **PHẢI được kiểm tra lại trước khi build** (nguồn ở Phụ lục D).
+> **Phiên bản:** 0.3, ngày 02/10/2026 (bản 0.1 và 0.2 cùng ngày; thay đổi ở §0.1). **Trạng thái:** bản nháp để chốt với chủ sản phẩm. Mọi số liệu về giá, giới hạn, pháp lý của bên thứ ba được kiểm tra ngày 02/10/2026 và **PHẢI được kiểm tra lại trước khi build** (nguồn ở Phụ lục D).
 
 <!-- TOC -->
 
@@ -16,7 +16,7 @@ Bộ tài liệu ("spec pack") gồm tài liệu chính này và các tệp máy
 
 | Bạn là... | Đọc theo thứ tự |
 |---|---|
-| Chủ sản phẩm | §0.1 → §1 → §2 → §3 → §4 → §13 → §14 → §17.1-17.4 → §17.10 → §18.1-18.3 → §19.1 → §21 → §22 |
+| Chủ sản phẩm | §0.1 → §1 → §2 → §3 → §4 → §13 → §14 → §17.1-17.4 → §17.10 → §17.14 → §18.1-18.3 → §19.1 → §21 → §22 |
 | Dev backend / hạ tầng | §5 → §6 → §10 → §12 → §17 → §18 → §20 → `db/schema.sql` → `api/openapi.yaml` |
 | Dev frontend | §3 → §4 → §11 → §19.6 → `api/openapi.yaml` → `examples/` |
 | Kỹ sư prompt / AI | §6 → §7 → §8 → §17.9 → §18 → §19 → Phụ lục A → `schemas/` → `reference/` → §16 |
@@ -27,14 +27,16 @@ Bộ tài liệu ("spec pack") gồm tài liệu chính này và các tệp máy
 
 ```bash
 pip install jsonschema pyyaml openapi-spec-validator pytest rapidfuzz pglast "psycopg[binary]"
-pytest tests --ignore=tests/pg_smoke.py                           # logic tất định: trích đoạn, thuật ngữ, chi phí, LLM Pool, bản dịch thô, Lõi văn phong...
+pytest tests --ignore=tests/pg_smoke.py                           # logic tất định: trích đoạn, thuật ngữ, chi phí, LLM Pool, khai báo và mã hoá khoá, Lõi văn phong...
 python tools/validate_spec.py                                      # schema, ví dụ, prompt, OpenAPI, enum chéo, cấu hình pool, lõi mẫu
 python tools/validate_spec.py --pg-dsn postgresql://user@host/db  # thêm: nạp DDL + hành vi trên PostgreSQL thật + so khớp hàm SQL của pool với bản tham chiếu
 python tools/simulate_pool.py                                      # mô phỏng pool (chờ, chuyển sang trả phí, 429) trước khi tốn tiền
 python tools/build_spec.py                                         # dựng lại SPEC.md từ tools/spec_src + prompts
 ```
 
-### 0.1 Thay đổi so với bản 0.1: đối chiếu với các quyết định của bạn
+### 0.1 Thay đổi so với các bản trước (0.1 → 0.3)
+
+**Từ 0.1 lên 0.2 (đối chiếu với các quyết định của bạn):**
 
 | Bạn quyết định | Thay đổi trong spec | Ở đâu |
 |---|---|---|
@@ -42,8 +44,15 @@ python tools/build_spec.py                                         # dựng lạ
 | Spec chỉ cung cấp cơ chế, không tự đặt cách dịch; có thể xây các lõi văn phong chuyên biệt do AI đề xuất, người duyệt và sửa | **Đã bỏ hướng dẫn văn phong tiếng Việt cố định**. Thay bằng **Lõi văn phong** (Style Core): dữ liệu có phiên bản, AI đề xuất (P12), người duyệt, bất biến sau khi duyệt; quy tắc bất biến (trung thực, giữ nguyên số liệu/tên/ID) tách khỏi văn phong và không bị lõi ghi đè. Glossary chuẩn cũng theo vòng AI đề xuất (P1, P13), hàng đợi duyệt, bản phát hành | §19, D9, Phụ lục A.0 |
 | VPS cá nhân, ở nước ngoài | Kiến trúc một máy (docker compose), không dịch vụ quản lý; sao lưu ngoài máy; khoá pool mã hoá tách khỏi bản sao lưu; hệ quả PDPL khi lưu dữ liệu người Việt ở ngoài lãnh thổ | §5.1, §20, §14.4, D10 |
 | Dùng nhiều nhà cung cấp chuẩn OpenAI và nhiều khoá Gemini (tận dụng free tier) theo dạng pool | **LLM Pool**: mô hình khái niệm, thuật toán đặt chỗ nguyên tử (có bản SQL và bản tham chiếu, đã so khớp từng bước), chế độ riêng tư, cổng triển khai, cờ ToS, chuyển tầng, mô phỏng. Kèm các sự thật cần biết về free tier và rủi ro tài khoản | §17, D4, D11 |
-| Dùng `riva-translate-4b-instruct-v2` của NVIDIA làm bản dịch thô cho LLM hiệu đính; nếu khâu này chết thì gọi LLM thay thế | **Khâu bản dịch thô** là bước phụ trong tác vụ `translate`, luôn có fallback từng đoạn sang dịch trực tiếp; kèm kết luận về chi phí, điều khoản NVIDIA (bản miễn phí chỉ để thử nghiệm) và quy tắc quyết định bật | §18, D6 |
+| Dùng `riva-translate-4b-instruct-v2` của NVIDIA làm bản dịch thô cho LLM hiệu đính; nếu khâu này chết thì gọi LLM thay thế | **Khâu bản dịch thô** là bước phụ trong tác vụ `translate`, luôn có fallback từng đoạn sang dịch trực tiếp; kèm kết luận về chi phí, điều khoản NVIDIA (bản miễn phí chỉ để thử nghiệm) và quy tắc quyết định bật. **Bản 0.3 đã bỏ hẳn hướng này (§18).** | §18, D6 |
 | Mục 6 | Câu trả lời trống; xem §22 (Q17) | §22 |
+
+**Từ 0.2 lên 0.3:**
+
+| Thay đổi | Nội dung | Ở đâu |
+|---|---|---|
+| **Bỏ khâu bản dịch thô của model dịch máy** | Mức `full_translation` chỉ dùng LLM dịch trực tiếp (P9). Bỏ prompt hiệu đính (số hiệu P11 bị loại, không dùng lại), profile `mt_draft`, schema `postedit_chunk`, cờ `draft_mt_mode`, các cột `draft_*` và `edit_level`, mã, test và cả công cụ ước tính so sánh lẫn bảng chi phí. Chỉ giữ một chương ngắn ghi quyết định và điều kiện xem xét lại | §18, D6 |
+| **Khai báo nhà cung cấp và khoá cho pool** | Khai thông tin chung của một nhà cung cấp một lần rồi dán cả chuỗi khoá (cách nhau bằng dấu phẩy, chấm phẩy, xuống dòng hoặc khoảng trắng); hệ thống tự tạo nhóm hạn mức, khoá, model, deployment; có xem trước (dry-run) và `risk_ack` cho cờ rủi ro | §17.14, D12 |
 
 ---
 
@@ -62,12 +71,13 @@ python tools/build_spec.py                                         # dựng lạ
 | D3 | Chủ sản phẩm trả chi phí LLM; kiểm soát bằng mã mời, tín dụng, trần chi tiêu | Đã chốt | Đây là rủi ro tài chính lớn nhất (xem 1.2) |
 | D4 | LLM là một **pool** nhiều nhà cung cấp và nhiều khoá (chuẩn OpenAI Chat Completions và Gemini), chọn theo profile, chế độ riêng tư, cổng triển khai và hạn mức; Gemini **trả phí** là chỗ dựa về chất lượng, riêng tư và độ sẵn sàng | Đề xuất (§17) | Free tier chỉ là phần trợ cấp: hạn mức nhỏ, có thể đổi bất cứ lúc nào, dùng nội dung để cải thiện sản phẩm của nhà cung cấp, và gom nhiều tài khoản để cộng hạn mức có rủi ro điều khoản. Job `private` không bao giờ chạm nhóm không cam kết `no_training` |
 | D5 | Lõi xử lý: pipeline **kê khai khái niệm → viết → kiểm chứng** | Đề xuất | Không sót ý, có trích dẫn, bắt được số liệu sai (§6) |
-| D6 | Model dịch máy (NMT) không làm lõi. Riêng mức dịch đầy đủ có **khâu bản dịch thô** tuỳ chọn (NVIDIA Riva Translate 4B v2) rồi LLM hiệu đính, luôn có fallback sang dịch trực tiếp | Đề xuất; bật sau bake-off (§18) | NMT dịch từng câu, không biết "giữ gì, nén gì", nên không dùng cho các mức tổng hợp. Với dịch đầy đủ, bản thô không làm rẻ hơn nếu LLM vẫn viết lại toàn bộ (§18.3); bản miễn phí của NVIDIA chỉ để thử nghiệm theo điều khoản |
+| D6 | Model dịch máy (NMT) không làm lõi. Khâu bản dịch thô cho mức dịch đầy đủ **đã được cân nhắc và loại khỏi phạm vi**: khi LLM vẫn viết lại toàn bộ thì không rẻ hơn dịch trực tiếp (còn đắt hơn khoảng 14%), số lời gọi LLM không giảm, và endpoint miễn phí của NVIDIA chỉ được dùng để thử nghiệm | Đã chốt (§18) | Mức `full_translation` dùng LLM dịch trực tiếp (P9); lý do, danh mục đã xoá và điều kiện xem xét lại ghi ngắn ở §18. NMT dịch từng câu, không biết "giữ gì, nén gì", nên cũng không dùng cho các mức tổng hợp |
 | D7 | Triển khai theo 3 cổng: A closed beta (mã mời) → B đăng ký mở (tín dụng nhỏ + trần) → C bán tín dụng. Cổng hiện hành (`dev`, `A`, `B`, `C`) quyết định nhóm hạn mức nào được dùng | Đề xuất | Học về chất lượng và chi phí trước khi mở rộng (§13.5); gắn cổng với `allowed_gates` để các nguồn rủi ro (khoá free gom nhiều tài khoản, endpoint thử nghiệm) tự bị loại khi mở công khai |
 | D8 | **Bật cả bốn mức** (kể cả `full_translation`) ngay từ cổng A, kèm rào chắn riêng cho dịch đầy đủ | Đã chốt [bạn] | Rủi ro bản quyền của dịch toàn văn vẫn cao hơn tổng hợp, nên: xác nhận quyền ở mỗi lần tải, tối đa 120.000 từ/tài liệu và 3 job dịch đầy đủ/người dùng/ngày, không chia sẻ công khai, `/takedown` 72 giờ, hạn lưu ngắn (§13.4, §14.4). Mỗi mức là một cờ trong `app_settings.enabled_levels` nên tắt lại không cần triển khai |
 | D9 | **Lõi văn phong**: spec chỉ cung cấp cơ chế; nội dung do AI đề xuất, người duyệt quyết định, lưu thành dữ liệu có phiên bản và bất biến sau khi duyệt | Đã chốt [bạn] (§19) | Cùng một pipeline phục vụ nhiều lĩnh vực mà không nhúng quan điểm văn phong của spec. Quy tắc trung thực luôn nằm trong prompt hệ thống, không nằm trong lõi |
 | D10 | Hạ tầng: **một VPS cá nhân ở nước ngoài**, docker compose, sao lưu mã hoá ra nhà cung cấp khác | Đã chốt [bạn] (§20) | Rẻ và đơn giản, đổi lại có điểm lỗi duy nhất và nghĩa vụ PDPL về chuyển dữ liệu ra nước ngoài (§14.4) |
 | D11 | Lõi pool **tự viết, mỏng** (Router chính sách + hàm SQL nguyên tử), chỉ hai loại adapter (`openai_compat`, `gemini_native`); trạng thái ở PostgreSQL | Đề xuất (§17.13) | Chính sách riêng tư/ToS/cổng và đặt chỗ nguyên tử là đặc thù của sản phẩm; gateway ngoài chỉ nên dùng làm tầng truyền tải nếu ghim phiên bản (sự cố chuỗi cung ứng LiteLLM 03/2026) |
+| D12 | Chủ hệ thống khai báo nhà cung cấp và khoá bằng biểu mẫu/dán chuỗi; **chấp nhận rủi ro điều khoản** khi gom nhiều tài khoản miễn phí, có `risk_ack` giữ dấu vết; cổng công khai B/C tự tắt nhóm gắn cờ rủi ro (có công tắc chủ động của chủ hệ thống) | Đã chốt [bạn] (§17.14) | Giảm ma sát khi thêm khoá/nhà cung cấp; rủi ro nằm ở tài khoản của chủ hệ thống nên cần xác nhận từng nhóm và không bật mặc định ở cổng công khai |
 
 ### 1.2 Rủi ro nổi bật: "công khai" + "chủ trả phí" + "tận dụng free tier"
 
@@ -90,7 +100,7 @@ Việc dùng pool với free tier (D4) thêm ba rủi ro mà §17.3 trình bày 
 | G5 | Chi phí kiểm soát được từng job, từng người dùng, toàn hệ thống |
 | G6 | Riêng tư theo người dùng, tuân thủ pháp luật Việt Nam hiện hành (§14) |
 | G7 | Chi phí LLM giảm nhờ tận dụng nhiều nhà cung cấp và hạn mức miễn phí **mà không** làm lộ dữ liệu cho nhà cung cấp dùng dữ liệu huấn luyện và không làm hỏng chất lượng (§17) |
-| G8 | Bản dịch đầy đủ không bao giờ bị chậm hoặc hỏng vì khâu phụ (bản dịch thô) chết: mọi đoạn luôn có đường quay về dịch trực tiếp (§18) |
+| G8 | Thêm nhà cung cấp hoặc khoá mới chỉ bằng một khai báo rút gọn: xem trước kế hoạch, xác nhận rủi ro có dấu vết, khoá được mã hoá ngay và không bao giờ hiện đầy đủ (§17.14) |
 
 **Ngoài phạm vi MVP:** hỏi đáp nhiều tài liệu, Audio/Video Overview, cộng tác thời gian thực, app mobile native, ngôn ngữ đích khác tiếng Việt (kiến trúc hỗ trợ, nhưng prompt và UI chỉ tối ưu cho `vi`), OCR chữ viết tay, chia sẻ báo cáo công khai bằng link.
 
@@ -196,7 +206,7 @@ Việc dùng pool với free tier (D4) thêm ba rủi ro mà §17.3 trình bày 
 | FR-28 | Định tuyến theo profile với riêng tư, cổng, cờ ToS, năng lực, hạn mức; chuyển dự phòng; chờ thay vì lỗi | MVP | Test: không job `private` nào được phục vụ bởi nhóm không `no_training`; không bao giờ vượt hạn mức đã cấu hình khi cấu hình đúng; 429 kích hoạt cooldown rồi tự phục hồi |
 | FR-29 | Chế độ riêng tư và đồng ý xử lý chung (`POST /me/consents`); xác nhận 18+; quy tắc EEA/Anh/Thụy Sĩ cho free tier | MVP | Job `standard` bị từ chối nếu thiếu `consent_shared_processing_at`; người dùng thuộc nước bị hạn chế không bao giờ rơi vào nhóm gắn `no_eea_uk_ch` |
 | FR-30 | Ước tính hàng chờ và dự báo dung lượng pool trước khi nhận job | P2 | `Estimate.queue`; `/admin/pool/capacity`; từ chối `pool_capacity_exceeded` kèm thời gian dự kiến thay vì nhận job rồi để kẹt |
-| FR-31 | Khâu bản dịch thô cho dịch đầy đủ + LLM hiệu đính + fallback từng đoạn | P2 (bật sau bake-off) | Mọi pid đầu vào có đúng một kết quả; khâu bản thô chết không làm job chậm quá `draft.segment_deadline_s` mỗi segment (test fuzz) |
+| FR-31 | Khai báo nhà cung cấp và khoá cho pool: dán chuỗi khoá (dấu phẩy/chấm phẩy/xuống dòng), nhãn tuỳ chọn `nhãn\|khoá`, dry-run xem trước, xác nhận rủi ro `risk_ack` | MVP | Dry-run trả kế hoạch nhóm/khoá/deployment **không chứa khoá** (chỉ 4 ký tự cuối); thiếu `risk_ack` cho cờ rủi ro trả `risk_ack_required`; khoá trùng hoặc giả bị chặn kèm lý do, khoá tốt vẫn được thêm |
 | FR-32 | Lõi văn phong có phiên bản: AI đề xuất, người duyệt, trả lời quyết định mở, thử trên đoạn mẫu, duyệt bất biến | MVP | Phiên bản đã duyệt không sửa/xoá được (trigger CSDL); không duyệt được khi còn quyết định mở hoặc mục AI chưa xác nhận |
 | FR-33 | Glossary chuẩn: đề xuất của AI/người dùng vào hàng đợi, duyệt, bản phát hành bất biến; công thức và job ghim theo bản | MVP | Bản phát hành chỉ chứa mục `confirmed`; job lưu `glossary_releases` đã dùng |
 | FR-34 | Giới hạn số job dịch đầy đủ mỗi người mỗi ngày | MVP | Vượt `full_translation_daily_limit` trả 422 `full_translation_daily_limit` |

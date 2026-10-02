@@ -449,10 +449,15 @@ def check_spec_refs() -> None:
         fail(f"README.md nêu số đếm lỗi thời: cần {stale_counts}")
     else:
         ok(f"số đếm trong README khớp tệp nguồn ({truth})")
-    for pid in [f"P{i}" for i in range(14)]:
-        if not list((ROOT / "prompts").glob(f"{pid}_*.md")):
-            fail(f"thiếu prompt {pid}")
-    ok("đủ 14 prompt P0-P13")
+    # P11 đã bị loại cùng quyết định bỏ khâu bản dịch thô (§18): 13 prompt P0-P10, P12, P13.
+    expected_prompts = [f"P{i}" for i in list(range(11)) + [12, 13]]
+    missing = [pid for pid in expected_prompts if not list((ROOT / "prompts").glob(f"{pid}_*.md"))]
+    if missing:
+        fail(f"thiếu prompt {missing}")
+    else:
+        ok("đủ 13 prompt P0-P10, P12-P13")
+    if list((ROOT / "prompts").glob("P11_*.md")):
+        fail("có prompt P11: số hiệu này đã bị loại và không dùng lại (§18)")
     stale = [w for w in ("style_guide_vi", "SG-VI", "00_style_guide_vi") if w in text]
     if stale:
         fail(f"SPEC.md còn nhắc tới thành phần đã bỏ: {stale}")

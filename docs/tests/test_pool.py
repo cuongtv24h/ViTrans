@@ -368,6 +368,10 @@ def test_classify_openai_compat_errors():
     assert classify_http("openai_compat", 401).kind == "auth_error"
     assert classify_http("openai_compat", 400, {}, {"error": {"message": "This model's maximum context length is 8192 tokens"}}).kind == "context_exceeded"
     assert classify_http("openai_compat", 400, {}, {"error": {"message": "unknown parameter"}}).kind == "bad_request"
+    # Google: khoá sai trả 400 INVALID_ARGUMENT (không phải 401) — phải cách ly khoá, không coi là lỗi lập trình
+    google_bad_key = {"error": {"status": "INVALID_ARGUMENT", "message": "API key not valid. Please pass a valid API key.", "details": [{"reason": "API_KEY_INVALID"}]}}
+    assert classify_http("gemini_native", 400, {}, google_bad_key).kind == "auth_error"
+    assert classify_http("gemini_native", 400, {}, {"error": {"message": "Invalid JSON payload received"}}).kind == "bad_request"
     assert classify_http("openai_compat", 503).kind == "server_error"
     assert classify_http("openai_compat", 504).kind == "timeout"
     assert classify_http("openai_compat", 200, finish_reason="length").kind == "truncated"

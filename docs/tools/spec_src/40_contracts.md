@@ -161,5 +161,5 @@ curation_runs (P12, P13, thử lõi)   glossaries ─< glossary_entries (status:
 - Mỗi sự kiện: `id: <số tăng dần>`, `event: <type>`, `data: <JobEvent JSON>` (schema `job_event.schema.json`).
 - Client kết nối lại bằng `Last-Event-ID`; server **phát lại** các sự kiện có `id` lớn hơn từ bảng `job_events`, rồi chuyển sang luồng trực tiếp (Redis pub/sub).
 - Gửi dòng chú thích `: ping` mỗi 15 giây; đặt `X-Accel-Buffering: no`, `Cache-Control: no-cache`; đóng luồng sau `job_succeeded` / `job_failed` / `job_canceled`.
-- Sự kiện **không chứa nội dung tài liệu**, chỉ trạng thái, bộ đếm, thông điệp tiếng Việt ngắn. Khi pool bắt job chờ hạn mức, phát `warning` với `data.code = pool_wait` và `data.until`; khi đoạn quay về dịch trực tiếp, `data.code = draft_fallback` (gộp theo segment, không phát từng đoạn).
+- Sự kiện **không chứa nội dung tài liệu**, chỉ trạng thái, bộ đếm, thông điệp tiếng Việt ngắn. Khi pool bắt job chờ hạn mức, phát `warning` với `data.code = pool_wait` và `data.until`.
 - Tiến độ `progress.pct` tính theo trọng số giai đoạn (§12.5).
