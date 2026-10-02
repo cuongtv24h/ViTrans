@@ -324,3 +324,29 @@ def test_cli_compare_reports_no_proven_benefit_in_demo_mode(store_path, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["core"] == "l1"
     assert "chưa chứng minh được lợi ích" in payload["verdict"]
+
+
+def test_cli_style_errors_are_clean_messages_not_tracebacks(store_path, capsys):
+    """Lỗi vòng đời là lỗi NGƯỜI DÙNG: phải in một dòng "LỖI: …" và thoát 1, không ném traceback."""
+    assert _cli("style", "init", "--id", "d1", "--name-vi", "Lõi", "--domain", "general") == 0
+    capsys.readouterr()
+
+    assert _cli("style", "compare", "d1") == 1  # chưa duyệt thì không dùng được
+    err = capsys.readouterr().err
+    assert err.startswith("LỖI:") and "chỉ dùng được bản đã duyệt" in err
+
+    assert _cli("style", "init", "--id", "d1", "--name-vi", "Trùng", "--domain", "general") == 1
+    assert "đã tồn tại" in capsys.readouterr().err
+
+    assert _cli("style", "show", "khong-co") == 1
+    assert "không tìm thấy lõi" in capsys.readouterr().err
+
+    assert _cli("style", "bump", "khong-co") == 1
+    assert capsys.readouterr().err.startswith("LỖI:")
+
+
+def test_cli_decide_rejects_answers_on_approved_versions(store_path, capsys):
+    assert _cli("style", "init", "--id", "d2", "--name-vi", "Lõi", "--domain", "general") == 0
+    assert _cli("style", "approve", "d2", "--by", "curator") == 0
+    assert _cli("style", "decide", "d2", "--answer", "d1=x", "--by", "curator") == 1
+    assert "không trả lời quyết định được nữa" in capsys.readouterr().err

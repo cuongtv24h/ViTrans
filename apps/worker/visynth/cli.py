@@ -450,6 +450,12 @@ def _store(args: argparse.Namespace):
     return StyleCoreStore.load(args.store) if args.store else StyleCoreStore.load()
 
 
+def _style_error(exc: Exception) -> int:
+    """Lỗi vòng đời lõi là lỗi NGƯỜI DÙNG (trạng thái chưa cho phép), không phải sự cố — in gọn, đừng traceback."""
+    print(f"LỖI: {exc}", file=sys.stderr)
+    return 1
+
+
 def _core_content(args: argparse.Namespace) -> dict:
     return json.loads(Path(args.core).read_text(encoding="utf-8"))
 
@@ -502,8 +508,13 @@ def cmd_style_init(args: argparse.Namespace) -> int:
             print(f"LỖI: lõi cha {args.parent} chưa được duyệt ({parent['status']}).", file=sys.stderr)
             return 1
         content["parent_id"] = parent["core_id"]
-    store.create(args.core_id, content, parent_id=args.parent, by=args.by, version=args.version)
-    store.save()
+    from visynth.stylecore import StyleCoreError
+
+    try:
+        store.create(args.core_id, content, parent_id=args.parent, by=args.by, version=args.version)
+        store.save()
+    except StyleCoreError as exc:
+        return _style_error(exc)
     print(f"Đã tạo lõi '{args.core_id}' phiên bản {args.version} (draft) trong {store.path}")
     print("Bước tiếp: thêm quy tắc/ví dụ (người hoặc P12), `style decide` trả lời quyết định mở, `style approve`.")
     return 0
@@ -535,6 +546,7 @@ def cmd_style_show(args: argparse.Namespace) -> int:
     if found is None:
         print(f"LỖI: không tìm thấy lõi '{args.version_id}' trong {store.path}", file=sys.stderr)
         return 1
+
     core, v = found
     payload = {
         "core_id": core["id"],
@@ -556,11 +568,16 @@ def cmd_style_show(args: argparse.Namespace) -> int:
 
 def cmd_style_decide(args: argparse.Namespace) -> int:
     """Trả lời một quyết định mở của P12 (§19.4)."""
+    from visynth.stylecore import StyleCoreError
+
     store = _store(args)
     core_id, _, version = args.version_id.partition("@")
     decision_id, _, answer = args.answer.partition("=")
-    store.answer(core_id, decision_id, answer, version=version or None, by=args.by)
-    store.save()
+    try:
+        store.answer(core_id, decision_id, answer, version=version or None, by=args.by)
+        store.save()
+    except StyleCoreError as exc:
+        return _style_error(exc)
     print(f"Đã ghi {decision_id} = {answer!r} cho {args.version_id}.")
     return 0
 
@@ -579,8 +596,7 @@ def cmd_style_approve(args: argparse.Namespace) -> int:
             print(f"  - {problem}", file=sys.stderr)
         return 1
     except StyleCoreError as exc:
-        print(f"LỖI: {exc}", file=sys.stderr)
-        return 1
+        return _style_error(exc)
     store.save()
     print(f"Đã duyệt {core_id}@{v['version']} bởi {v['approved_by']} (sha {v['content_sha256'][:12]}).")
     print("Phiên bản đã duyệt là BẤT BIẾN: muốn sửa thì `style bump` rồi duyệt bản mới.")
@@ -588,10 +604,15 @@ def cmd_style_approve(args: argparse.Namespace) -> int:
 
 
 def cmd_style_bump(args: argparse.Namespace) -> int:
+    from visynth.stylecore import StyleCoreError
+
     store = _store(args)
     core_id, _, version = args.version_id.partition("@")
-    v = store.bump(core_id, args.kind, by=args.by)
-    store.save()
+    try:
+        v = store.bump(core_id, args.kind, by=args.by)
+        store.save()
+    except StyleCoreError as exc:
+        return _style_error(exc)
     print(f"Đã tạo bản nháp {core_id}@{v['version']} từ bản trước ({args.kind}).")
     return 0
 
@@ -604,8 +625,7 @@ def cmd_style_deprecate(args: argparse.Namespace) -> int:
     try:
         v = store.deprecate(core_id, by=args.by, version=version or None, reason=args.reason or "")
     except StyleCoreError as exc:
-        print(f"LỖI: {exc}", file=sys.stderr)
-        return 1
+        return _style_error(exc)
     store.save()
     print(f"Đã ngừng dùng {core_id}@{v['version']}.")
     return 0
@@ -621,9 +641,13 @@ def cmd_style_compare(args: argparse.Namespace) -> int:
     from visynth.pipeline.models import JobOptions
     from visynth.pipeline.run import run_document
     from visynth.prompts import neutral_style_core
+    from visynth.stylecore import StyleCoreError
 
     store = _store(args)
-    candidate = store.compile(args.version_id, "write")
+    try:
+        candidate = store.compile(args.version_id, "write")
+    except StyleCoreError as exc:
+        return _style_error(exc)
 
     def _run(style_text: str | None):
         if args.pool_config:

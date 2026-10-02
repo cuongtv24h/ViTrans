@@ -2165,7 +2165,7 @@ Không cần biết trước nội dung văn phong; quy trình tự sinh ra nó:
 trên một kho JSON ngoài repo (M0 chưa có PostgreSQL): bản `approved` bất biến, chỉ tăng phiên bản mới khi sửa;
 `approve` bị chặn khi còn quyết định mở, còn quy tắc/ví dụ `origin = ai` mà `reviewed = false`, hoặc lint có lỗi;
 job chỉ biên dịch được từ phiên bản **đã duyệt** (`visynth run --style-core <id>[@version]`), và job ghi lại
-`content_sha256` để tái lập. `style compare` là `test-drive` bước 5/7 (chạy lõi trung tính và lõi ứng viên trên
+`content_sha256` để tái lập. Lỗi vòng đời là lỗi người dùng: CLI in một dòng `LỖI: …`, thoát mã 1, không ném traceback. `style compare` là `test-drive` bước 5/7 (chạy lõi trung tính và lõi ứng viên trên
 cùng tài liệu rồi so chỉ số đo được, nhắc rằng điểm "Văn phong" phải do người chấm).
 
 ### 19.10 Đã kiểm thử gì
