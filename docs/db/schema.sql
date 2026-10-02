@@ -721,6 +721,8 @@ INSERT INTO app_settings (key, value) VALUES
   ('max_pool_wait_hours',        '12'),                      -- tổng thời gian chờ hạn mức tối đa của một job trước khi chuyển tầng trả phí hoặc thất bại
   ('restricted_free_tier_countries', '["AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT","LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE","IS","LI","NO","CH","GB"]'),
   ('pool_allow_risk_at_public_gates', 'false'),             -- true: chấp nhận dùng nhóm gắn multi_account_risk/trial_only ngay cả ở cổng B/C (SPEC §17.4)
+  ('pool_lease_ttl_s',           '120'),                    -- thời gian sống của một chỗ đặt trước (llm_leases)
+  ('pool_diversity_max_wait_s',  '30'),                     -- chờ tối đa để đa dạng hoá deployment trước khi nhận trùng
   ('pool_version',               '1');
 
 CREATE TABLE spend_daily (

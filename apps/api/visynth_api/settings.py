@@ -31,6 +31,7 @@ class Settings:
     session_secret: str = ""
     upload_dir: Path = field(default_factory=lambda: Path(os.environ.get("VISYNTH_UPLOAD_DIR", "/tmp/visynth/uploads")))
     pool_config: Path | None = None
+    pool_master_key: str = ""  # POOL_MASTER_KEY: khoá chủ mã hoá khoá API (KHÔNG nằm trong CSDL/bản sao lưu)
     prompts_dir: Path | None = None
     schemas_dir: Path | None = None
     session_ttl_s: int = 14 * 24 * 3600
@@ -50,12 +51,22 @@ class Settings:
             self.db_dsn = os.environ.get("VISYNTH_DB_DSN", "")
         if not self.session_secret:
             self.session_secret = os.environ.get("VISYNTH_SESSION_SECRET", "")
+        if not self.pool_master_key:
+            self.pool_master_key = os.environ.get("VISYNTH_POOL_MASTER_KEY") or os.environ.get("POOL_MASTER_KEY", "")
         if self.pool_config is None and os.environ.get("VISYNTH_POOL_CONFIG"):
             self.pool_config = Path(os.environ["VISYNTH_POOL_CONFIG"])
         if self.prompts_dir is None and os.environ.get("VISYNTH_PROMPTS_DIR"):
             self.prompts_dir = Path(os.environ["VISYNTH_PROMPTS_DIR"])
         if self.schemas_dir is None and os.environ.get("VISYNTH_SCHEMAS_DIR"):
             self.schemas_dir = Path(os.environ["VISYNTH_SCHEMAS_DIR"])
+
+    def master_key(self) -> bytes | None:
+        """Khoá chủ đã kiểm hợp lệ, hoặc None khi chưa cấu hình (khi đó không ghi/đọc được khoá mã hoá)."""
+        if not self.pool_master_key:
+            return None
+        from visynth.pool.secrets import load_master_key
+
+        return load_master_key(self.pool_master_key)
 
     def check(self) -> None:
         missing = [

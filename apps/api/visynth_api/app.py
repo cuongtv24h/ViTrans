@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from visynth_api import __version__
 from visynth_api.db import Database
 from visynth_api.errors import Problem, problem_handler
-from visynth_api.routers import account, admin, catalog, documents, glossaries, jobs, reports
+from visynth_api.routers import account, admin, catalog, curation, documents, glossaries, jobs, pool_admin, reports
 from visynth_api.settings import Settings, load_settings
 
 log = logging.getLogger("visynth.api")
@@ -58,7 +58,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
             media_type="application/problem+json",
         )
 
-    for module in (account, documents, jobs, glossaries, reports, catalog, admin):
+    for module in (account, documents, jobs, glossaries, reports, catalog, admin, curation, pool_admin):
         app.include_router(module.router, prefix=API_PREFIX)
 
     @app.get(f"{API_PREFIX}/healthz", tags=["ops"])

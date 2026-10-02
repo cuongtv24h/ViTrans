@@ -2306,6 +2306,13 @@ components:
         errors:
           type: array
           items: {type: string}
+        warnings:
+          type: array
+          description: Cảnh báo không chặn (ví dụ trường chỉ để hiển thị bị bỏ qua khi nhập lại bản xuất).
+          items: {type: string}
+        version:
+          type: integer
+          description: Số phiên bản cấu hình pool sau khi ghi (`app_settings.pool_version`).
         diff:
           type: object
           properties:
