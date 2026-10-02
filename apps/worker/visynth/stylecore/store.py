@@ -119,6 +119,8 @@ class StyleCoreStore:
         version: str = "0.1.0",
         parent_id: str | None = None,
         open_decisions: list | None = None,
+        proposal_evidence: list | None = None,
+        proposal_risks: list | None = None,
         by: str | None = None,
         at: float | None = None,
     ) -> dict:
@@ -136,6 +138,8 @@ class StyleCoreStore:
                     "content_sha256": content_sha256(content),
                     "open_decisions": open_decisions or [],
                     "answers": {},
+                    "proposal_evidence": proposal_evidence or [],
+                    "proposal_risks": proposal_risks or [],
                     "history": [{"action": "create", "by": by, "at": at if at is not None else time.time()}],
                 }
             ],
@@ -169,6 +173,8 @@ class StyleCoreStore:
             "content_sha256": latest["content_sha256"],
             "open_decisions": [],
             "answers": {},
+            "proposal_evidence": [],
+            "proposal_risks": [],
             "history": [
                 {
                     "action": "bump",
@@ -180,6 +186,31 @@ class StyleCoreStore:
         }
         self.core(core_id)["versions"].append(new)
         return new
+
+    def confirm_ai(
+        self, core_id: str, ids: list[str] | None = None, *, version: str | None = None, by: str | None = None
+    ) -> dict:
+        """Người duyệt xác nhận đã XEM các mục do AI đề xuất (`reviewed = True`).
+
+        `ids=None` = xác nhận tất cả. Chỉ chạy trên bản chưa duyệt; đây là điều kiện để `approve()` không bị chặn.
+        """
+        v = self.version(core_id, version)
+        if v["status"] in ("approved", "deprecated"):
+            raise StyleCoreError(f"phiên bản {v['version']} đã {v['status']} — không xác nhận được nữa")
+        want = None if ids is None else set(ids)
+        confirmed = []
+        for coll in ("rules", "exemplars"):
+            for item in v["content"].get(coll, []):
+                if item.get("origin") == "ai" and not item.get("reviewed") and (want is None or item["id"] in want):
+                    item["reviewed"] = True
+                    confirmed.append(item["id"])
+        if want is not None:
+            missing = want - set(confirmed)
+            if missing:
+                raise StyleCoreError(f"không tìm thấy mục AI chưa xem nào khớp: {sorted(missing)}")
+        v["content_sha256"] = content_sha256(v["content"])
+        self._touch(core_id, v, "confirm", by, ", ".join(confirmed) or "(không có mục nào)")
+        return v
 
     # ------------------------------------------------------------------ vòng đời duyệt
     def answer(

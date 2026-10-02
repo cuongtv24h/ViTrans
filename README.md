@@ -92,6 +92,10 @@ nằm ngoài repo (`~/.local/state/visynth/style_cores.json`):
 
 ```bash
 visynth style init --id bai-giang --name-vi "Lõi bài giảng" --domain education   # bản nháp từ lõi TRUNG TÍNH
+visynth style propose --id bai-giang --name-vi "Lõi bài giảng" --domain education \
+    --brief mo_ta_linh_vuc.md --samples thu_muc_tai_lieu --pairs cap_tham_chieu.json   # P12 đề xuất (chạy thật bằng --pool-config)
+visynth style confirm bai-giang --all --by ban                                   # xác nhận đã xem từng mục AI đề xuất
+visynth style edit    bai-giang --core ban_sua.json --by ban                     # sửa trực tiếp bản nháp
 visynth style lint   --core docs/prompts/00_style_core_neutral.json               # lỗi/cảnh báo, không cần kho
 visynth style compile --core <tệp.json> --stage write                            # khối {{style_core}} để dán vào prompt
 visynth style decide  bai-giang --answer d1="chọn cách A" --by ban               # trả lời quyết định mở của P12
@@ -101,6 +105,18 @@ visynth style status                                                            
 visynth style compare bai-giang --path <tài liệu>                                # test-drive: lõi trung tính vs lõi này (§19.9 b.7)
 visynth run <tài liệu> --pool-config pool_config.json --style-core bai-giang      # job chỉ dùng được bản ĐÃ DUYỆT
 ```
+
+Glossary chuẩn (§19.5) đi cùng đường: ứng viên P1 từ nhiều tài liệu mẫu → P13 hài hoà → hàng đợi duyệt → phát hành:
+
+```bash
+visynth glossary propose --candidates ung_vien_a.json ung_vien_b.json --contexts ngu_canh.json --pool-config pool_config.json
+visynth glossary status                                    # mục [CẦN NGƯỜI] lên đầu
+visynth glossary approve "Solar Plexus" --target "Trung tâm Thái dương" --by ban
+visynth glossary reject  "Gate 49" --reason "từ thường" --by ban
+visynth glossary publish --by ban --summary "v1"           # chỉ mục confirmed; bản phát hành bất biến
+```
+
+Không có khoá? Thêm `--demo` để chạy khô toàn bộ đường ống bằng đề xuất giả (chỉ kiểm đường ống, **không phải đề xuất thật**).
 
 ## Kiểm tra
 

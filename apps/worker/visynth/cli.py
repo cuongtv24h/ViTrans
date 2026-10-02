@@ -550,13 +550,30 @@ def cmd_style_show(args: argparse.Namespace) -> int:
     core, v = found
     payload = {
         "core_id": core["id"],
-        **{k: v[k] for k in ("version", "status", "content_sha256", "open_decisions", "answers")},
+        **{
+            k: v[k]
+            for k in (
+                "version",
+                "status",
+                "content_sha256",
+                "open_decisions",
+                "answers",
+                "proposal_evidence",
+                "proposal_risks",
+            )
+        },
         "content": v["content"],
     }
     if args.json:
         _dump(payload, as_json=True, out=None, human="")
         return 0
     print(f"{core['id']}@{v['version']} — {v['status']}, sha {v['content_sha256'][:12]}")
+    if v.get("proposal_evidence"):
+        print("Bằng chứng của đề xuất:")
+        for e in v["proposal_evidence"]:
+            print(f"  {e['target_id']} ← {e['source_ref']} ({e['kind']}): {e.get('excerpt', '')[:140]}")
+    if v.get("proposal_risks"):
+        print("Rủi ro P12 nêu: " + "; ".join(v["proposal_risks"]))
     if v["open_decisions"]:
         print("Quyết định mở:")
         for d in v["open_decisions"]:
@@ -693,6 +710,297 @@ def cmd_style_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _curate_client(args: argparse.Namespace):
+    """Client cho đường curation: `None` = chạy khô bằng đề xuất giả (không tốn token)."""
+    if getattr(args, "demo", False) or not getattr(args, "pool_config", None):
+        return None, "chạy khô (đề xuất giả, không gọi LLM)"
+    from visynth.pool.client import Ledger, PooledLLMClient
+
+    cfg = json.loads(Path(args.pool_config).read_text(encoding="utf-8"))
+    ledger = Ledger(Path(args.ledger) if getattr(args, "ledger", None) else None)
+    client = PooledLLMClient.from_config(cfg, ledger=ledger, gate=args.gate, privacy="private")
+    return client, f"pool: {args.pool_config}"
+
+
+def _read_samples(directory: str) -> dict[str, str]:
+    root = Path(directory)
+    if not root.is_dir():
+        return {}
+    docs = {}
+    for path in sorted(root.iterdir()):
+        if path.suffix.lower() in (".txt", ".md") and path.is_file():
+            docs[path.stem] = path.read_text(encoding="utf-8")
+    return docs
+
+
+def _read_json(path: str | None, default):
+    return json.loads(Path(path).read_text(encoding="utf-8")) if path else default
+
+
+def cmd_style_propose(args: argparse.Namespace) -> int:
+    """§19.9 bước 1-3: P12 đề xuất từ tài liệu mẫu + cặp tham chiếu → bản NHÁP có quyết định mở."""
+    from visynth.stylecore import StyleCoreError, StyleCoreStore
+    from visynth.stylecore.propose import excerpts_from_texts, normalise_pairs, propose
+
+    docs = _read_samples(args.samples)
+    if not docs:
+        print(f"LỖI: không có tệp .txt/.md nào trong {args.samples}", file=sys.stderr)
+        return 2
+    brief = Path(args.brief).read_text(encoding="utf-8")
+    samples = excerpts_from_texts(docs)
+    pairs = normalise_pairs(_read_json(args.pairs, []))
+    feedback = [
+        {"id": f"FB{i:02d}", "text": f if isinstance(f, str) else f.get("text", "")}
+        for i, f in enumerate(_read_json(args.feedback, []), 1)
+    ]
+    client, note = _curate_client(args)
+    store = StyleCoreStore.load(args.store) if args.store else StyleCoreStore.load()
+    existing = None
+    if args.refine:
+        found = store.find(args.refine)
+        if found is None:
+            print(f"LỖI: không tìm thấy lõi '{args.refine}' để tinh chỉnh", file=sys.stderr)
+            return 1
+        existing = found[1]["content"]
+    try:
+        result = propose(
+            client,
+            brief=brief,
+            samples=samples,
+            pairs=pairs,
+            feedback=feedback,
+            existing_core=existing,
+            name_vi=args.name_vi,
+            domain=args.domain,
+        )
+    except Exception as exc:  # lỗi mạng/schema của P12: báo gọn
+        print(f"LỖI: P12 thất bại — {exc}", file=sys.stderr)
+        return 1
+    payload = {
+        "core_id": args.core_id,
+        "mode": "refine" if existing else "bootstrap",
+        "client": note,
+        "samples": len(samples),
+        "pairs": len(pairs),
+        "summary_vi": result.summary_vi,
+        "confidence": result.confidence,
+        "risks_vi": result.risks_vi,
+        "notes": result.notes,
+        "rules": len(result.content["rules"]),
+        "exemplars": len(result.content["exemplars"]),
+        "decisions_needed": result.decisions,
+        "evidence": result.evidence,
+        "content": result.content,
+    }
+    if not args.dry_run:
+        try:
+            store.create(
+                args.core_id,
+                result.content,
+                parent_id=args.parent,
+                open_decisions=result.decisions,
+                proposal_evidence=result.evidence,
+                proposal_risks=result.risks_vi,
+                by=args.by,
+            )
+            store.save()
+        except StyleCoreError as exc:
+            return _style_error(exc)
+        payload["store"] = str(store.path)
+        payload["next"] = [
+            f"visynth style show {args.core_id}",
+            f'visynth style decide {args.core_id} --answer D01="…" --by {args.by or "ban"}',
+            f"visynth style confirm {args.core_id} --all --by {args.by or 'ban'}",
+            f"visynth style approve {args.core_id} --by {args.by or 'ban'}",
+        ]
+    human = (
+        f"P12 ({'tinh chỉnh' if existing else 'khởi tạo'}) — {note}\n"
+        f"  đầu vào: {len(samples)} đoạn mẫu, {len(pairs)} cặp tham chiếu, {len(feedback)} phản hồi\n"
+        f"  đề xuất: {len(result.content['rules'])} quy tắc, {len(result.content['exemplars'])} ví dụ, "
+        f"{len(result.decisions)} quyết định mở (độ tin cậy {result.confidence})\n"
+        + (f"  tóm tắt: {result.summary_vi}\n" if result.summary_vi else "")
+        + ("  đã loại (kỷ luật bằng chứng):\n" + "\n".join(f"    - {n}" for n in result.notes) if result.notes else "")
+        + ("\n  " + "\n  ".join(payload.get("next", [])) if not args.dry_run else "\n(chạy khô: KHÔNG ghi vào kho)")
+    )
+    _dump(payload, as_json=args.json, out=args.out, human=human)
+    return 0
+
+
+def cmd_style_edit(args: argparse.Namespace) -> int:
+    """Người duyệt sửa trực tiếp nội dung một bản nháp (bản đã duyệt là bất biến)."""
+    from visynth.stylecore import StyleCoreError
+
+    store = _store(args)
+    core_id, _, version = args.version_id.partition("@")
+    content = json.loads(Path(args.core).read_text(encoding="utf-8"))
+    try:
+        v = store.edit(core_id, content, version=version or None, by=args.by)
+        store.save()
+    except StyleCoreError as exc:
+        return _style_error(exc)
+    print(
+        f"Đã sửa {core_id}@{v['version']} (sha mới {v['content_sha256'][:12]}). Lint: {len(store.lint_version(core_id + '@' + v['version']))} vấn đề."
+    )
+    return 0
+
+
+def cmd_style_confirm(args: argparse.Namespace) -> int:
+    """Xác nhận đã xem mục do AI đề xuất (`reviewed = true`) — điều kiện để duyệt được."""
+    from visynth.stylecore import StyleCoreError
+
+    store = _store(args)
+    core_id, _, version = args.version_id.partition("@")
+    if not args.all and not (args.ids or "").strip():
+        print("LỖI: cần --all (xác nhận tất cả) hoặc --ids R01,E02", file=sys.stderr)
+        return 2
+    ids = None if args.all else [i.strip() for i in args.ids.split(",") if i.strip()]
+    try:
+        v = store.confirm_ai(core_id, ids, version=version or None, by=args.by)
+        store.save()
+    except StyleCoreError as exc:
+        return _style_error(exc)
+    print(
+        f"Đã xác nhận trên {core_id}@{v['version']}: {', '.join(i['id'] for i in v['content']['rules'] + v['content']['exemplars'] if i.get('origin') == 'ai' and i.get('reviewed')) or '(không có)'}"
+    )
+    return 0
+
+
+def _glossary_store(args: argparse.Namespace):
+    from visynth.glossary import GlossaryStore
+
+    return GlossaryStore.load(args.store) if args.store else GlossaryStore.load()
+
+
+def cmd_glossary_propose(args: argparse.Namespace) -> int:
+    """§19.5: ứng viên theo tài liệu → merge_candidates → P13 → bằng chứng do code ghép → mục `suggested`."""
+    from visynth.glossary import harmonise
+
+    per_doc: dict[str, list[dict]] = {}
+    for path in args.candidates:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            per_doc[Path(path).stem] = data
+        else:
+            per_doc[data.get("doc_ref") or Path(path).stem] = data.get("candidates", [])
+    raw_ctx = _read_json(args.contexts, {})
+    contexts = {tuple(k.split("|", 1)): v for k, v in raw_ctx.items()}
+    client, note = _curate_client(args)
+    try:
+        entries, dropped, merged = harmonise(
+            client,
+            per_doc=per_doc,
+            contexts=contexts,
+            policy=_read_json(args.policy, {}),
+            existing=[
+                {"source_term": e["source_term"], "target_term": e["target_term"]} for e in _glossary_store(args).rows()
+            ]
+            if args.existing
+            else [],
+            pairs=_read_json(args.pairs, []),
+            max_entries=args.max_entries,
+        )
+    except Exception as exc:
+        print(f"LỖI: P13 thất bại — {exc}", file=sys.stderr)
+        return 1
+    payload = {
+        "client": note,
+        "documents": len(per_doc),
+        "merged": len(merged),
+        "proposed": len(entries),
+        "entries": entries,
+        "dropped": dropped,
+    }
+    if not args.dry_run:
+        store = _glossary_store(args)
+        payload["suggested"] = store.suggest_many(entries, by="ai")
+        store.save()
+        payload["store"] = str(store.path)
+        payload["next"] = [
+            "visynth glossary status",
+            "visynth glossary approve <source_term> --by <ban>",
+            "visynth glossary publish --by <ban>",
+        ]
+    human = (
+        f"P13 — {note}\n"
+        f"  {len(per_doc)} tài liệu → {len(merged)} thuật ngữ gộp → {len(entries)} đề xuất, {len(dropped)} bị loại\n"
+        + "\n".join(
+            f"    {e['source_term']} → {e['target_term']} ({e['confidence']})"
+            + (" [cần người]" if e.get("needs_human") else "")
+            for e in entries[:20]
+        )
+        + (f"\n  kho: {payload.get('store')}" if payload.get("store") else "\n(chạy khô: KHÔNG ghi vào kho)")
+    )
+    _dump(payload, as_json=args.json, out=args.out, human=human)
+    return 0
+
+
+def cmd_glossary_status(args: argparse.Namespace) -> int:
+    store = _glossary_store(args)
+    rows = store.rows(args.status)
+    if args.json:
+        _dump(rows, as_json=True, out=None, human="")
+        return 0
+    if not rows:
+        print(f"Glossary trống: {store.path}")
+        return 0
+    print(
+        f"Glossary {store.data.get('glossary_id')}: {store.path} — {len(store.data['entries'])} mục, {len(store.data['releases'])} bản phát hành"
+    )
+    for r in rows:
+        flags = " [CẦN NGƯỜI]" if r.get("needs_human") else ""
+        rel = ",".join(r.get("released", []))
+        print(
+            f"  [{r['status']}]{flags} {r['source_term']} → {r['target_term']} (tin cậy {r['confidence']}, {len(r['evidence'])} bằng chứng{', đã phát hành ' + rel if rel else ''})"
+        )
+    return 0
+
+
+def cmd_glossary_approve(args: argparse.Namespace) -> int:
+    from visynth.glossary import GlossaryError
+
+    store = _glossary_store(args)
+    try:
+        e = store.approve(args.source_term, by=args.by, target_term=args.target)
+        store.save()
+    except GlossaryError as exc:
+        print(f"LỖI: {exc}", file=sys.stderr)
+        return 1
+    print(f"Đã duyệt '{e['source_term']}' → '{e['target_term']}'.")
+    return 0
+
+
+def cmd_glossary_reject(args: argparse.Namespace) -> int:
+    from visynth.glossary import GlossaryError
+
+    store = _glossary_store(args)
+    try:
+        e = store.reject(args.source_term, by=args.by, reason=args.reason or "")
+        store.save()
+    except GlossaryError as exc:
+        print(f"LỖI: {exc}", file=sys.stderr)
+        return 1
+    print(f"Đã từ chối '{e['source_term']}' (mục vẫn được giữ để P1/P13 không đề xuất lại).")
+    return 0
+
+
+def cmd_glossary_publish(args: argparse.Namespace) -> int:
+    from visynth.glossary import GlossaryError
+
+    store = _glossary_store(args)
+    try:
+        release = store.publish(by=args.by, summary=args.summary or "")
+        store.save()
+    except GlossaryError as exc:
+        print(f"LỖI: {exc}", file=sys.stderr)
+        return 1
+    diff = store.diff(release["release"])
+    print(
+        f"Đã phát hành {release['release']} ({release['count']} mục, sha {release['content_sha256'][:12]}) "
+        f"— thêm {len(diff['added'])}, xoá {len(diff['removed'])}, đổi {len(diff['changed'])}."
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="visynth", description="ViSynth — prototype CLI (M0)")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -797,6 +1105,44 @@ def build_parser() -> argparse.ArgumentParser:
         if name == "deprecate":
             q.add_argument("--reason")
         q.set_defaults(func=func)
+    q = ss.add_parser("propose", help="P12 đề xuất lõi từ tài liệu mẫu + cặp tham chiếu (§19.9 bước 1-3)")
+    q.add_argument("--id", dest="core_id", required=True)
+    q.add_argument("--name-vi", required=True)
+    q.add_argument("--domain", required=True)
+    q.add_argument("--brief", required=True, help="tệp mô tả lĩnh vực/người đọc/mục đích (≤ 3.000 ký tự)")
+    q.add_argument("--samples", required=True, help="thư mục tài liệu mẫu (.txt/.md), 3-10 tài liệu")
+    q.add_argument("--pairs", help="tệp JSON cặp dịch tham chiếu [{'source','target',…}] — bằng chứng mạnh nhất")
+    q.add_argument("--feedback", help="tệp JSON phản hồi/cờ của người dùng")
+    q.add_argument("--refine", help="tinh chỉnh từ lõi hiện có (core_id[@version]) thay vì khởi tạo")
+    q.add_argument("--parent", help="lõi cha trong kho (kế thừa, mặc định không)")
+    q.add_argument("--pool-config", help="chạy P12 thật; bỏ trống = chạy khô bằng đề xuất giả")
+    q.add_argument("--ledger")
+    q.add_argument("--gate", choices=["dev", "A", "B", "C"], default="dev")
+    q.add_argument("--demo", action="store_true", help="buộc dùng đề xuất giả")
+    q.add_argument("--dry-run", action="store_true", help="không ghi vào kho")
+    q.add_argument("--by")
+    q.add_argument("--store")
+    q.add_argument("--json", action="store_true")
+    q.add_argument("--out")
+    q.set_defaults(func=cmd_style_propose)
+
+    q = ss.add_parser("edit", help="sửa trực tiếp nội dung một bản nháp (bản đã duyệt là bất biến)")
+    q.add_argument("version_id")
+    q.add_argument("--core", required=True, help="tệp JSON nội dung mới")
+    q.add_argument("--by")
+    q.add_argument("--store")
+    q.add_argument("--json", action="store_true")
+    q.set_defaults(func=cmd_style_edit)
+
+    q = ss.add_parser("confirm", help="xác nhận đã xem mục AI đề xuất (reviewed = true)")
+    q.add_argument("version_id")
+    q.add_argument("--ids", help="danh sách id, ví dụ R01,E02 (bỏ trống cần --all)")
+    q.add_argument("--all", action="store_true", help="xác nhận tất cả mục AI chưa xem")
+    q.add_argument("--by")
+    q.add_argument("--store")
+    q.add_argument("--json", action="store_true")
+    q.set_defaults(func=cmd_style_confirm)
+
     q = ss.add_parser("compare", help="test-drive §19.9: lõi trung tính vs lõi ứng viên trên cùng tài liệu")
     q.add_argument("version_id")
     q.add_argument("--path", help="tài liệu để chạy (bỏ trống = kịch bản giả)")
@@ -809,6 +1155,55 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--json", action="store_true")
     q.add_argument("--out")
     q.set_defaults(func=cmd_style_compare)
+
+    gl = sub.add_parser("glossary", help="Glossary chuẩn (SPEC §19.5): P13, hàng đợi duyệt, phát hành")
+    gs = gl.add_subparsers(dest="glossary_cmd", required=True)
+
+    q = gs.add_parser("propose", help="hài hoà ứng viên từ nhiều tài liệu mẫu bằng P13 rồi vào hàng đợi `suggested`")
+    q.add_argument("--candidates", nargs="+", required=True, help="tệp JSON ứng viên P1 theo tài liệu")
+    q.add_argument("--contexts", help="tệp JSON {'doc_ref|source_term': [đoạn trích,…]}")
+    q.add_argument("--policy", help="tệp JSON terminology_policy (lấy từ lõi văn phong)")
+    q.add_argument("--pairs", help="tệp JSON cặp dịch tham chiếu (ưu tiên khi chọn cách dịch)")
+    q.add_argument("--existing", action="store_true", help="đưa các mục đã có trong kho vào để P13 không đề xuất trùng")
+    q.add_argument("--max-entries", type=int, default=60)
+    q.add_argument("--pool-config")
+    q.add_argument("--ledger")
+    q.add_argument("--gate", choices=["dev", "A", "B", "C"], default="dev")
+    q.add_argument("--demo", action="store_true")
+    q.add_argument("--dry-run", action="store_true")
+    q.add_argument("--store")
+    q.add_argument("--json", action="store_true")
+    q.add_argument("--out")
+    q.set_defaults(func=cmd_glossary_propose)
+
+    q = gs.add_parser("status", help="hàng đợi duyệt, mục cần người quyết định lên đầu")
+    q.add_argument("--status", choices=["suggested", "confirmed", "rejected"])
+    q.add_argument("--store")
+    q.add_argument("--json", action="store_true")
+    q.set_defaults(func=cmd_glossary_status)
+
+    q = gs.add_parser("approve", help="duyệt một mục (kèm sửa cách dịch nếu cần)")
+    q.add_argument("source_term")
+    q.add_argument("--target", help="cách dịch chốt lại nếu khác đề xuất")
+    q.add_argument("--by", required=True)
+    q.add_argument("--store")
+    q.add_argument("--json", action="store_true")
+    q.set_defaults(func=cmd_glossary_approve)
+
+    q = gs.add_parser("reject", help="từ chối một mục (mục được giữ lại để không bị đề xuất lại)")
+    q.add_argument("source_term")
+    q.add_argument("--reason")
+    q.add_argument("--by", required=True)
+    q.add_argument("--store")
+    q.add_argument("--json", action="store_true")
+    q.set_defaults(func=cmd_glossary_reject)
+
+    q = gs.add_parser("publish", help="phát hành bản mới (chỉ mục confirmed; bất biến)")
+    q.add_argument("--by", required=True)
+    q.add_argument("--summary")
+    q.add_argument("--store")
+    q.add_argument("--json", action="store_true")
+    q.set_defaults(func=cmd_glossary_publish)
 
     pool = sub.add_parser("pool", help="LLM Pool thật (SPEC §17): khoá, khai báo, kiểm định, mô phỏng")
     ps = pool.add_subparsers(dest="pool_cmd", required=True)

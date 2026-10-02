@@ -157,9 +157,24 @@ Không cần biết trước nội dung văn phong; quy trình tự sinh ra nó:
 trên một kho JSON ngoài repo (M0 chưa có PostgreSQL): bản `approved` bất biến, chỉ tăng phiên bản mới khi sửa;
 `approve` bị chặn khi còn quyết định mở, còn quy tắc/ví dụ `origin = ai` mà `reviewed = false`, hoặc lint có lỗi;
 job chỉ biên dịch được từ phiên bản **đã duyệt** (`visynth run --style-core <id>[@version]`), và job ghi lại
-`content_sha256` để tái lập. Lỗi vòng đời là lỗi người dùng: CLI in một dòng `LỖI: …`, thoát mã 1, không ném traceback. `style compare` là `test-drive` bước 5/7 (chạy lõi trung tính và lõi ứng viên trên
+`content_sha256` để tái lập. Lỗi vòng đời là lỗi người dùng: CLI in một dòng `LỖI: …`, thoát mã 1, không ném traceback.
+
+**Khởi tạo bằng P12:** `visynth style propose --brief … --samples <thư mục> [--pairs …]` gọi P12 rồi để **code** áp
+kỷ luật bằng chứng: trích mẫu được gán ID `S01…`, cặp tham chiếu `REF01…`, brief `B01`; mọi bằng chứng trỏ tới ID lạ
+hoặc sai `kind` bị loại; quy tắc không còn bằng chứng bị loại; ví dụ phải chép **nguyên văn** từ một cặp tham chiếu,
+nếu không bị loại; mục mắc lỗi lint bị loại (kèm lý do trong `notes`); mọi mục bị ép `origin = ai`, `reviewed = false`;
+`name_vi`, `domain`, `glossary_refs`, `limits` lấy từ người duyệt, **không** lấy từ model. Kết quả là bản nháp với
+`open_decisions` = `decisions_needed`; bằng chứng (văn bản thật tra từ ID) lưu cạnh phiên bản và hiện trong `style show`.
+`style confirm --all|--ids` đánh dấu người duyệt đã xem; `style edit` sửa bản nháp trực tiếp; chuỗi
+`propose → decide → confirm → approve` không có bước nào AI tự duyệt.
+
+**Glossary bằng P13:** `visynth glossary propose --candidates <tệp P1 theo tài liệu> --contexts <json>` chạy
+`merge_candidates` (tất định) → P13 → `attach_evidence` (model chỉ trả `ctx_ids`, code ghép đoạn trích thật, `ctx_id` lạ
+bị loại) → lưu `suggested` với `proposed_by = ai`. Hàng đợi `glossary status` xếp mục `needs_human` lên đầu; `approve`
+cho sửa cách dịch, `reject` **giữ lại** mục để P1/P13 không đề xuất lại; `publish` chỉ gồm mục `confirmed`, là ảnh chụp
+bất biến có `content_sha256`, kèm `diff` so bản trước. Chạy khô bằng `--demo` (đề xuất giả) khi chưa muốn tốn token. `style compare` là `test-drive` bước 5/7 (chạy lõi trung tính và lõi ứng viên trên
 cùng tài liệu rồi so chỉ số đo được, nhắc rằng điểm "Văn phong" phải do người chấm).
 
 ### 19.10 Đã kiểm thử gì
 
-`tests/test_style_core.py`: lõi trung tính và lõi mẫu hợp lệ theo schema; lõi trung tính không đặt quan điểm nào; biên dịch theo giai đoạn; thứ tự lược và việc `must` không bị lược; thoát dấu `<`; lint chặn các kiểu chèn chỉ thị; mục AI chưa xem chặn việc duyệt; kế thừa (ghi đè theo id, `unspecified` không xoá cha, phát hiện vòng lặp và độ sâu); hash ổn định. `tests/test_prompt_render.py`: lõi đi vào đúng chỗ, bọc như dữ liệu, mọi prompt dùng lõi có câu chốt bất biến. `tests/pg_smoke.py`: tính bất biến của phiên bản đã duyệt, các CHECK, bản phát hành glossary chỉ chứa mục `confirmed`.
+`tests/test_style_core.py` (bản M0 nằm ở thư mục `tests/` của kho mã: test_stylecore.py, test_style_propose.py, test_glossary.py): lõi trung tính và lõi mẫu hợp lệ theo schema; lõi trung tính không đặt quan điểm nào; biên dịch theo giai đoạn; thứ tự lược và việc `must` không bị lược; thoát dấu `<`; lint chặn các kiểu chèn chỉ thị; mục AI chưa xem chặn việc duyệt; kế thừa (ghi đè theo id, `unspecified` không xoá cha, phát hiện vòng lặp và độ sâu); hash ổn định. `tests/test_prompt_render.py`: lõi đi vào đúng chỗ, bọc như dữ liệu, mọi prompt dùng lõi có câu chốt bất biến. `tests/pg_smoke.py`: tính bất biến của phiên bản đã duyệt, các CHECK, bản phát hành glossary chỉ chứa mục `confirmed`.
