@@ -57,6 +57,27 @@ def test_worker_has_no_direct_internet_route():
     assert set(SERVICES["caddy"]["networks"]) == {"internal", "uplink"}
 
 
+def test_parser_runs_in_a_sandbox_without_internet_or_secrets():
+    """Parser bóc tách (§6.1, §20.4) là tiến trình ít tin cậy nhất: phải bị nhốt chặt nhất."""
+    parser = SERVICES["parser"]
+    assert parser["networks"] == ["internal"], "parser không được nằm ở mạng có tuyến ra internet"
+    assert "ports" not in parser, "parser không được lộ cổng ra ngoài"
+    assert parser.get("read_only", COMPOSE["x-app"]["read_only"]) is True
+    assert "ALL" in parser.get("cap_drop", COMPOSE["x-app"]["cap_drop"])
+    assert parser["mem_limit"] and parser["pids_limit"]
+    assert not parser.get("secrets"), "parser KHÔNG được giữ khoá chủ/nhà cung cấp"
+    command = " ".join(parser["command"])
+    assert "parse-server" in command and "--max-bytes" in command and "--timeout" in command
+    env = parser["environment"]
+    # Kể cả khi biến proxy rò từ môi trường vào, parser cũng không được có tuyến ra ngoài.
+    assert env["HTTP_PROXY"] == "" and env["HTTPS_PROXY"] == ""
+    assert env["NO_PROXY"] == "*"
+    # API phải biết parser nằm đâu và chỉ gửi byte thô qua mạng nội bộ
+    api_env = SERVICES["api"]["environment"]
+    assert api_env["VISYNTH_PARSER_URL"] == "http://parser:8080"
+    assert SERVICES["api"]["depends_on"]["parser"]["condition"] == "service_healthy"
+
+
 def test_no_docker_socket_and_all_containers_hardened():
     for name, svc in SERVICES.items():
         volumes = svc.get("volumes") or []

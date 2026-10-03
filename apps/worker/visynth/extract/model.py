@@ -140,6 +140,66 @@ class Extraction:
         chars = sum(p.char_count for p in self.paragraphs)
         return max(1, round(chars / (2.8 if self.language_code == "vi" else 4.0)))
 
+    def as_dict(self) -> dict:
+        """JSON thuần để truyền qua mạng nội bộ (dịch vụ parser sandbox → API) và dựng lại được."""
+        return {
+            "title": self.title,
+            "source_type": self.source_type,
+            "language_code": self.language_code,
+            "language_confidence": self.language_confidence,
+            "page_count": self.page_count,
+            "extraction_quality": self.extraction_quality,
+            "warnings": list(self.warnings),
+            "needs_ocr": self.needs_ocr,
+            "ocr_pages": list(self.ocr_pages),
+            "paragraphs": [p.as_row() for p in self.paragraphs],
+            "sections": [s.as_row() for s in self.sections],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Extraction:
+        """Dựng lại `Extraction` từ `as_dict()` (giữ nguyên `pid`, thứ tự và số đo)."""
+        paragraphs = [
+            Paragraph(
+                pid=row["pid"],
+                idx=int(row["idx"]),
+                kind=row["kind"],
+                content=row["content"],
+                section_id=row.get("section_id"),
+                page_start=row.get("page_start"),
+                page_end=row.get("page_end"),
+                timecode_start_ms=row.get("timecode_start_ms"),
+                timecode_end_ms=row.get("timecode_end_ms"),
+                speaker=row.get("speaker"),
+            )
+            for row in data.get("paragraphs") or []
+        ]
+        sections = [
+            Section(
+                section_id=row["section_id"],
+                parent_section_id=row.get("parent_section_id"),
+                title=row["title"],
+                level=int(row["level"]),
+                idx=int(row["idx"]),
+                first_pid=row["first_pid"],
+                last_pid=row["last_pid"],
+            )
+            for row in data.get("sections") or []
+        ]
+        return cls(
+            title=data["title"],
+            source_type=data.get("source_type", "upload"),
+            paragraphs=paragraphs,
+            sections=sections,
+            warnings=list(data.get("warnings") or []),
+            language_code=data.get("language_code"),
+            language_confidence=float(data.get("language_confidence") or 0.0),
+            page_count=data.get("page_count"),
+            extraction_quality=float(data.get("extraction_quality") or 1.0),
+            needs_ocr=bool(data.get("needs_ocr")),
+            ocr_pages=[int(p) for p in (data.get("ocr_pages") or [])],
+        )
+
     def by_pid(self, pid: str) -> Paragraph:
         for p in self.paragraphs:
             if p.pid == pid:

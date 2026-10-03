@@ -92,6 +92,14 @@ services:
     <<: *app
     command: ["/app/infra/entrypoint-api.sh"]
     secrets: [pool_master_key]
+    environment:
+      <<: *app-env
+      VISYNTH_PARSER_URL: http://parser:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+      parser:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/healthz', timeout=5).status == 200 else 1)"]
       interval: 30s
@@ -117,17 +125,26 @@ services:
     mem_limit: 1g
     pids_limit: 512
 
-  # `parser` (bóc tách/OCR trong sandbox không có mạng) CHƯA bật: hiện việc bóc tách chạy trong
-  # tiến trình API lúc tải tài liệu, chưa có hàng đợi riêng cho giai đoạn `extract`. Khi làm, thêm
-  # service đúng khuôn dưới đây — bắt buộc: chỉ mạng `internal` (không có tuyến ra internet),
-  # non-root, `read_only`, `cap_drop: [ALL]`, `mem_limit`, `pids_limit`, KHÔNG mount `docker.sock`
-  # (§20.2, §20.4):
-  #
-  # parser:
-  #   <<: *app
-  #   command: ["python", "-m", "visynth.cli", "worker", "--stages", "extract", "--worker-id", "parser-1"]
-  #   mem_limit: 1500m
-  #   pids_limit: 256
+  # Bóc tách chạy trong sandbox riêng (§6.1, §20.4): KHÔNG có tuyến ra internet (chỉ mạng `internal`),
+  # hệ tệp chỉ đọc + `tmpfs`, non-root, `cap_drop: [ALL]`, trần 50 MB và timeout 120 giây ở tầng ứng
+  # dụng. Container này KHÔNG có khoá nhà cung cấp nào và không bao giờ gọi LLM.
+  parser:
+    <<: *app
+    command: ["sh", "-c", "exec python -m visynth.cli parse-server --port 8080 --max-bytes 52428800 --timeout 120"]
+    environment:
+      <<: *app-env
+      # Không proxy: mọi lời gọi ra ngoài đều phải thất bại ngay, kể cả khi biến môi trường rò vào.
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      NO_PROXY: "*"
+    mem_limit: 1500m
+    pids_limit: 256
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5).status == 200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
   # Việc định kỳ gọi hàm SQL có sẵn: reclaim_stale_tasks + pool_reap_leases (mỗi phút),
   # purge_expired_documents (mỗi giờ), và `health` để giám sát ngoài máy (§20.2, §20.7).

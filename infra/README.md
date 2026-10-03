@@ -115,15 +115,15 @@ curl -fsS https://$VISYNTH_DOMAIN/api/v1/healthz  # 5. kiểm thử khói (AC-01
 | Chạm trần chi tiêu | Job tự dừng (`max_cost_usd`); kiểm `jobs.actual_shadow_usd`; nâng trần có chủ đích, đừng tắt kiểm |
 | Khoá bị từ chối (401/400 `API_KEY_INVALID`) | Khoá vào `llm_credentials.status='quarantined'`; thay khoá mới qua Admin API, gỡ cách ly (§20.7 runbook 8) |
 | Job kẹt | `visynth ops reap --json`; xem `jobs.status='awaiting_glossary'` (cổng chờ người duyệt) |
+| Tải tài liệu trả 503 `parser_unavailable` | `docker compose ps parser` + `docker compose logs parser`; parser bóc tách trong sandbox nên có thể chết vì tệp xấu — khởi động lại, người dùng thử lại |
 | VPS chết | Thuê máy mới → mục 0 → mục 5 (khôi phục) → mục 2 |
 | Đĩa đầy | `docker system prune -f`, xoay log, kiểm bản sao lưu cũ trong `/backup` |
 | Nghi bị xâm nhập | Ngắt cổng 443, **xoay mọi khoá** (LLM, phiên, khoá chủ), rà `llm_calls`/`audit_log`, thông báo người dùng nếu cần theo luật |
 
 ## 8. Chưa có trong M1 (biết để không hẫng)
 
-- **`parser` sandbox** (bóc tách/OCR không có mạng): hiện việc bóc tách chạy trong tiến trình API lúc
-  tải tài liệu. Khi tách ra thành service riêng, dùng đúng khuôn đã ghi chú trong `docker-compose.yml`
-  (chỉ mạng `internal`, non-root, `read_only`, `cap_drop: [ALL]`, không mount `docker.sock`).
+- **`web` SPA** thay cho Next.js của §20.3: M2 phục vụ tệp tĩnh bằng FastAPI (dev) và Caddy (VPS) —
+  ghi ở `docs/BUILD_PLAN.md` mục "sai lệch có chủ ý".
 - **`web`** (Next.js) chỉ có ở mốc M2 — Caddy đã chừa chỗ ở nhánh `handle { … }`.
 - **WAL lưu ngoài máy** (RPO tính bằng phút) cần cho cổng C, khi sổ tín dụng đã có tiền thật (§20.6).
 - **Hồ sơ PDPL** (đánh giá tác động, thoả thuận chuyển dữ liệu) là việc giấy tờ ở §20.8, không phải việc mã.

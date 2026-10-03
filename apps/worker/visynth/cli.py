@@ -1114,6 +1114,20 @@ def cmd_db(args: argparse.Namespace) -> int:
     return 2
 
 
+def cmd_parse_server(args: argparse.Namespace) -> int:
+    """Chạy dịch vụ parser sandbox (§6.1/§20.4) — container riêng, không mạng ra ngoài, read-only."""
+    from visynth.extract import MAX_FILE_BYTES
+    from visynth.worker.parser_service import serve
+
+    serve(
+        args.host,
+        args.port,
+        max_bytes=args.max_bytes or MAX_FILE_BYTES,
+        timeout_s=args.timeout,
+    )
+    return 0
+
+
 def cmd_ops(args: argparse.Namespace) -> int:
     """Bảo trì định kỳ (SPEC §20): thu hồi task/chỗ đặt, xoá nội dung hết hạn, đọc số liệu sức khoẻ."""
     from visynth.worker import ops
@@ -1350,6 +1364,16 @@ def build_parser() -> argparse.ArgumentParser:
         q = ds.add_parser(name, help=helptext)
         q.add_argument("--db-dsn", default=os.environ.get("VISYNTH_DB_DSN", ""))
         q.set_defaults(func=cmd_db)
+
+    q = sub.add_parser(
+        "parse-server",
+        help="dịch vụ bóc tách trong sandbox (SPEC §6.1): container không mạng, hệ tệp chỉ đọc",
+    )
+    q.add_argument("--host", default="0.0.0.0")  # noqa: S104 - chỉ mạng `internal` của compose nhìn thấy
+    q.add_argument("--port", type=int, default=8080)
+    q.add_argument("--max-bytes", type=int, default=0, help="trần dung lượng (mặc định 50 MB theo §6.1)")
+    q.add_argument("--timeout", type=int, default=120, help="timeout mỗi lần bóc tách, giây (§6.1)")
+    q.set_defaults(func=cmd_parse_server)
 
     ops_p = sub.add_parser("ops", help="bảo trì định kỳ (SPEC §20): thu hồi task/chỗ đặt, xoá nội dung hết hạn")
     os_sub = ops_p.add_subparsers(dest="ops_cmd", required=True)

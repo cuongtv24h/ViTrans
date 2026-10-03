@@ -46,10 +46,16 @@ class Settings:
     worker_limit: int = 1
     worker_idle_exit_s: float = 0.0  # >0: tự thoát khi hàng đợi trống (chạy một lượt theo cron)
     base_url: str = "http://localhost:8000"
+    #: Dịch vụ parser sandbox (§6.1/§20.4): bóc tách chạy trong container không mạng, read-only.
+    #: Trống = bóc tách ngay trong tiến trình API (chỉ dùng ở máy phát triển).
+    parser_url: str = ""
+    parser_timeout_s: float = 120.0
     #: Chỉ để chẩn đoán: khoá chủ được đọc từ tệp thay vì biến môi trường.
     pool_master_key_file_used: bool = False
 
     def __post_init__(self) -> None:
+        if not self.parser_url:
+            self.parser_url = os.environ.get("VISYNTH_PARSER_URL", "").rstrip("/")
         if not self.db_dsn:
             self.db_dsn = os.environ.get("VISYNTH_DB_DSN", "")
         if not self.session_secret:
@@ -89,6 +95,7 @@ def load_settings(**overrides: object) -> Settings:
     """Đọc cấu hình từ môi trường; `overrides` dùng cho test."""
     base: dict[str, object] = {
         "upload_dir": Path(os.environ.get("VISYNTH_UPLOAD_DIR", "/tmp/visynth/uploads")),
+        "parser_url": os.environ.get("VISYNTH_PARSER_URL", "").rstrip("/"),
         "cookie_secure": _bool("VISYNTH_COOKIE_SECURE"),
         "open_signup": _bool("VISYNTH_OPEN_SIGNUP"),
         "signup_credits": _int("VISYNTH_SIGNUP_CREDITS", 0),

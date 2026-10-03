@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFil
 
 from visynth.extract import Extraction, ExtractionError, extract
 from visynth.extract.ocr import estimate_scanned_words
+from visynth.worker.parser_client import ParserRejected, ParserUnavailable, parse_via_service
 from visynth_api.db import Database
 from visynth_api.errors import Problem
 from visynth_api.security import current_user
@@ -103,11 +104,19 @@ def upload_document(
         stored = storage_dir / str(document_id)
         stored.write_bytes(raw)
     try:
-        parsed = extract(stored if stored is not None else raw, filename=filename, title=title)
+        parsed = _parse(request, stored if stored is not None else raw, filename=filename, title=title)
     except ExtractionError as exc:
         if stored is not None:
             stored.unlink(missing_ok=True)
         raise Problem(422, exc.code, str(exc)) from exc
+    except ParserRejected as exc:
+        if stored is not None:
+            stored.unlink(missing_ok=True)
+        raise Problem(422 if exc.status < 500 else 502, exc.code, exc.message or str(exc)) from exc
+    except ParserUnavailable as exc:
+        if stored is not None:
+            stored.unlink(missing_ok=True)
+        raise Problem(503, "parser_unavailable", f"bộ bóc tách đang bận, hãy thử lại: {exc}") from exc
     words_estimated = False
     if parsed.needs_ocr and not parsed.word_count:
         # Tài liệu quét chưa có chữ: ước lượng để báo giá được ngay; worker ghi lại số thật sau khi OCR.
@@ -197,6 +206,17 @@ def upload_document(
             "ocr_chunks": len(parsed.ocr_pages) and len(_ocr_chunk_keys(parsed.page_count or 0, parsed.ocr_pages)),
         }
     }
+
+
+def _parse(request: Request, source, *, filename: str, title: str | None):
+    """Bóc tách qua **dịch vụ parser sandbox** nếu cấu hình có; không thì chạy tại chỗ (máy phát triển)."""
+    settings = request.app.state.settings
+    if not settings.parser_url:
+        return extract(source, filename=filename, title=title)
+    raw = source if isinstance(source, bytes) else Path(source).read_bytes()
+    return parse_via_service(
+        settings.parser_url, raw, filename=filename, title=title, timeout_s=settings.parser_timeout_s
+    )
 
 
 def _ocr_chunk_keys(page_count: int, pages: list[int]) -> list[str]:
