@@ -3115,8 +3115,8 @@ Output ONLY JSON that matches the provided schema.
 
 | Kiểm tra | Kết quả |
 |---|---|
-| `pytest tests` (so khớp trích đoạn, lint thuật ngữ, số liệu, ước tính chi phí, wire schema, render prompt, **LLM Pool**, **khai báo và mã hoá khoá**, **Lõi văn phong**, structured output) | ĐẠT: 184 passed in 1.25s |
-| `validate_spec.py` (schema, ví dụ, kiểm tra phủ định, chéo ví dụ, prompt, OpenAPI, enum chéo DDL/schema/OpenAPI, cấu hình pool, lõi mẫu) | THẤT BẠI: 129 kiểm tra |
+| `pytest tests` (so khớp trích đoạn, lint thuật ngữ, số liệu, ước tính chi phí, wire schema, render prompt, **LLM Pool**, **khai báo và mã hoá khoá**, **Lõi văn phong**, structured output) | ĐẠT: 184 passed in 1.15s |
+| `validate_spec.py` (schema, ví dụ, kiểm tra phủ định, chéo ví dụ, prompt, OpenAPI, enum chéo DDL/schema/OpenAPI, cấu hình pool, lõi mẫu) | ĐẠT: 130 kiểm tra |
 | DDL | Chỉ parse cú pháp (chưa chạy trên PostgreSQL thật) |
 
 Chạy ngày 2026-10-02, Python 3.11.2. Kiểm tra lại bằng lệnh ở §0. Các bài kiểm tra này chứng minh **logic và ngữ nghĩa** của spec; chúng KHÔNG chứng minh chất lượng đầu ra của LLM thật hay hạn mức thật của nhà cung cấp (xem §17.9, §21).

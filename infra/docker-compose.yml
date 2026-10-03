@@ -22,6 +22,9 @@ x-app-env: &app-env
   VISYNTH_BASE_URL: https://${VISYNTH_DOMAIN:?đặt VISYNTH_DOMAIN trong .env}
   VISYNTH_UPLOAD_DIR: /data/uploads
   VISYNTH_POOL_MASTER_KEY_FILE: /run/secrets/pool_master_key
+  # SPA không bước build nằm trong image (`COPY apps ./apps`); Caddy chuyển mọi thứ vào API nên API phải
+  # phục vụ được tệp tĩnh. Đặt tường minh để không phụ thuộc vào việc đoán đường dẫn lúc chạy.
+  VISYNTH_WEB_DIR: /app/apps/web
   VISYNTH_PROMPTS_DIR: /app/docs/prompts
   VISYNTH_SCHEMAS_DIR: /app/docs/schemas
   TZ: ${TZ:-Asia/Ho_Chi_Minh}

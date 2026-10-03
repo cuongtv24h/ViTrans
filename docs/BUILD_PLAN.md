@@ -170,6 +170,8 @@ Wizard 3 bước (kèm chế độ riêng tư và đồng ý), cổng glossary, 
 | Duyệt Lõi văn phong + hàng đợi thuật ngữ (§19.6) | 🟢 mã xong | Tab riêng: phiên bản (gửi → P12 chất vấn → trả lời → duyệt/từ chối, kèm chạy thử), hàng đợi `glossary-review` với quyết định duyệt/sửa-rồi-duyệt/loại |
 | Vận hành | 🟢 mã xong | Trần chi tiêu, mã mời (tạo + hiện mã một lần), người dùng (vai trò/trạng thái), sử dụng 14 ngày, nhật ký kiểm toán |
 | **Kiểm thử với người thật (thoát mốc)** | 🔴 chưa | Cần 3–5 người thử hoàn thành F2 không cần hướng dẫn; làm sau khi dựng VPS (theo chỉ đạo: kiểm chứng để sau) |
+| Vá lệch hợp đồng SPA ↔ API | 🟢 xong (M3) | Trang Vận hành đọc sai tên trường (`max_cost_usd`/`spent_today_usd` thay vì `daily_spend_cap_usd`/`today_cost_usd`), coi `/admin/users`, `/admin/usage`, `/admin/invites` là `{items}` trong khi chúng trả MẢNG, đọc `target_type`/`actor_email` không tồn tại, và gửi `action: "confirm"` cho quyết định glossary (hợp đồng chỉ nhận `approve|reject|edit_approve`). Nay có helper `asItems` dùng chung và test đối chiếu hai đầu (`test_web_admin_contract.py`). |
+| SPA trong image Docker | 🟢 xong (M3) | `pip install .` đặt gói vào `site-packages` nên đường dẫn SPA suy từ `__file__` sai ⇒ Caddy chuyển mọi thứ vào API nhưng API không có tệp tĩnh ⇒ **404 trang chủ trên VPS**. Nay `Settings` tự tìm theo danh sách ứng viên (kho mã → `/app/apps/web` → `apps/web` trong thư mục làm việc) và compose đặt `VISYNTH_WEB_DIR: /app/apps/web` tường minh. |
 
 ### M3 — Làm cứng và beta (2 tuần) → **cổng A**
 

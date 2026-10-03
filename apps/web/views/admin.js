@@ -10,6 +10,11 @@
 import { get, patch, post, put } from "../lib/api.js";
 import { h, nf, mount, statusBadge, toast, usd, when } from "../lib/ui.js";
 
+// Hợp đồng của API không đồng nhất một kiểu: có tuyến trả mảng trần (`/admin/users`, `/admin/usage`,
+// `/admin/invites`), có tuyến trả `{items: [...]}` (`/admin/glossary-review`, `/admin/audit`). Nhận cả
+// hai kiểu ở MỘT chỗ để không phải nhớ tuyến nào kiểu nào — và để đổi API sau này chỉ sửa một dòng.
+export const asItems = (value) => (Array.isArray(value) ? value : (value && value.items) || []);
+
 const TABS = [
   ["pool", "Pool LLM"],
   ["loi-van-phong", "Lõi văn phong"],
@@ -488,8 +493,12 @@ async function paintQueue(box) {
           on: {
             click: async () => {
               try {
+                // Tên hành động ở đây TRÙNG hợp đồng (`approve | reject | edit_approve`) để không có
+                // bước dịch nào có thể lệch: `edit_approve` khi người duyệt đổi cách dịch, `approve`
+                // khi duyệt nguyên — sổ kiểm toán cần phân biệt hai việc này.
+                const edited = target.value.trim() && target.value.trim() !== (entry.target_term || "");
                 await post(`/admin/glossary-review/${entry.id}/decision`, {
-                  action,
+                  action: action === "reject" ? "reject" : edited ? "edit_approve" : "approve",
                   target_term: target.value.trim() || null,
                   note: note.value.trim() || null,
                 });
@@ -517,7 +526,7 @@ async function paintQueue(box) {
       ),
       h("td", {}, target),
       h("td", {}, note),
-      h("td", {}, h("div", { class: "row" }, decide("confirm"), decide("reject"))),
+      h("td", {}, h("div", { class: "row" }, decide("approve"), decide("reject"))),
     );
   });
 
@@ -549,12 +558,26 @@ async function paintQueue(box) {
 async function paintOps(box) {
   const [users, usage, caps, audit] = await Promise.all([
     get("/admin/users?limit=20"),
-    get("/admin/usage?days=14").catch(() => null),
+    get("/admin/usage?days=14").catch(() => []),
     get("/admin/spend-cap"),
     get("/admin/audit?limit=20").catch(() => ({ items: [] })),
   ]);
+  // `/admin/usage` trả MẢNG theo ngày (`UsageDay`); giao diện gộp lại thành vài con số cho dễ đọc.
+  const usageRows = asItems(usage);
+  const usageTotals = usageRows.reduce(
+    (acc, row) => ({
+      started: acc.started + (row.jobs_started || 0),
+      succeeded: acc.succeeded + (row.jobs_succeeded || 0),
+      failed: acc.failed + (row.jobs_failed || 0),
+      cost: acc.cost + Number(row.cost_usd || 0),
+      cap: Math.max(acc.cap, Number(row.cap_usd || 0)),
+    }),
+    { started: 0, succeeded: 0, failed: 0, cost: 0, cap: 0 },
+  );
+  const usageAnyPaused = () => usageRows.some((row) => row.paused);
 
-  const userRows = (users.items || []).map((user) => {
+  const auditRows = asItems(audit);
+  const userRows = asItems(users).map((user) => {
     const select = h(
       "select",
       {},
@@ -585,12 +608,17 @@ async function paintOps(box) {
     );
   });
 
-  const capInput = h("input", { type: "number", step: "0.5", min: "0", value: String(caps.max_cost_usd ?? caps.daily_cost_usd ?? "") });
+  const capInput = h("input", {
+    type: "number",
+    step: "0.5",
+    min: "0",
+    value: String(caps.daily_spend_cap_usd ?? ""),
+  });
   const capSave = h("button", { class: "primary" }, "Lưu trần");
   capSave.addEventListener("click", async () => {
     capSave.disabled = true;
     try {
-      await put("/admin/spend-cap", { max_cost_usd: Number(capInput.value) });
+      await put("/admin/spend-cap", { daily_spend_cap_usd: Number(capInput.value) });
       toast("Đã lưu trần chi tiêu.");
     } catch (error) {
       toast(error.message || "Không lưu được trần.", { error: true });
@@ -612,7 +640,10 @@ async function paintOps(box) {
         credits_grant: Number(inviteCredits.value),
         max_uses: Number(inviteMax.value),
       });
-      const codes = (created.codes || created.items || []).map((item) => item.code || item).join(", ");
+      // API trả MẢNG các hàng `invite_codes` (mỗi hàng có `code`).
+      const codes = asItems(created)
+        .map((item) => item.code || item)
+        .join(", ");
       mount(inviteBox, h("code", {}, codes || "(không có mã)"));
       toast("Đã tạo mã mời.");
     } catch (error) {
@@ -629,7 +660,12 @@ async function paintOps(box) {
       { class: "panel" },
       h("h2", { style: "margin-top:0" }, "Trần chi tiêu"),
       h("div", { class: "row" }, h("label", {}, "USD/ngày", capInput), capSave),
-      h("small", { class: "muted" }, `Đang dùng: ${usd(caps.spent_today_usd ?? 0)} hôm nay.`),
+      h(
+        "small",
+        { class: "muted" },
+        `Hôm nay đã chi ${usd(caps.today_cost_usd ?? 0)}.` +
+          (caps.paused_today ? " Đang TẠM DỪNG nhận job mới vì chạm trần." : ""),
+      ),
     ),
     h(
       "section",
@@ -645,28 +681,36 @@ async function paintOps(box) {
       h("h2", { style: "margin-top:0" }, "Người dùng"),
       h("div", { class: "table-wrap" }, h("table", {}, h("thead", {}, h("tr", {}, h("th", {}, "Email"), h("th", {}, "Vai trò"), h("th", {}, "Trạng thái"), h("th", {}, "Tín dụng"), h("th", {}))), h("tbody", {}, ...userRows))),
     ),
-    usage
+    usageRows.length
       ? h(
           "section",
           { class: "panel" },
-          h("h2", { style: "margin-top:0" }, "Sử dụng 14 ngày"),
+          h("h2", { style: "margin-top:0" }, `Sử dụng ${usageRows.length} ngày`),
           h("div", { class: "grid" },
-            h("div", {}, h("div", { class: "muted" }, "Job"), h("strong", {}, String(usage.jobs ?? usage.job_count ?? "—"))),
-            h("div", {}, h("div", { class: "muted" }, "Tín dụng"), h("strong", {}, String(usage.credits ?? "—"))),
-            h("div", {}, h("div", { class: "muted" }, "Chi phí thật"), h("strong", {}, usd(usage.cost_usd ?? 0))),
+            h("div", {}, h("div", { class: "muted" }, "Job đã chạy"), h("strong", {}, nf.format(usageTotals.started))),
+            h("div", {}, h("div", { class: "muted" }, "Thành công / hỏng"), h("strong", {}, `${usageTotals.succeeded} / ${usageTotals.failed}`)),
+            h("div", {}, h("div", { class: "muted" }, "Chi phí thật"), h("strong", {}, usd(usageTotals.cost))),
+            h("div", {}, h("div", { class: "muted" }, "Trần đã đặt"), h("strong", {}, usd(usageTotals.cap))),
           ),
+          h("small", { class: "muted" }, usageAnyPaused() ? "Có ngày bị tạm dừng vì chạm trần." : ""),
         )
       : null,
     h(
       "section",
       { class: "panel" },
       h("h2", { style: "margin-top:0" }, "Nhật ký kiểm toán gần đây"),
-      (audit.items || []).length
+      auditRows.length
         ? h(
             "ul",
             { class: "clean" },
-            ...(audit.items || []).map((row) =>
-              h("li", {}, h("small", { class: "muted" }, `${when(row.created_at)} · ${row.action} · ${row.target_type || ""}`), h("br"), String(row.actor_email || row.actor_id || "")),
+            ...auditRows.map((row) =>
+              h(
+                "li",
+                {},
+                h("small", { class: "muted" }, `${when(row.created_at)} · ${row.action} · ${row.entity || ""}`),
+                h("br"),
+                String(row.user_id || "(hệ thống)"),
+              ),
             ),
           )
         : h("p", { class: "hint" }, "Chưa có bản ghi kiểm toán."),

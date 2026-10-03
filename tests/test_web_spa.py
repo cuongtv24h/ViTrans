@@ -132,3 +132,44 @@ def test_no_secret_storage_in_browser():
         # Chỉ bắt LỜI GỌI thật, không bắt tên trong chú thích (chú thích có nói về localStorage).
         for sink in ("localStorage.", "sessionStorage.", "document.cookie"):
             assert sink not in source, f"{path.name} dùng {sink}"
+
+
+# ---------------------------------------------------------------------------------------------
+# SPA trên VPS (M3 vá lỗi M2): image Docker cài gói vào site-packages nên KHÔNG thể suy ra thư mục
+# SPA từ `__file__`. Nếu không xử lý, Caddy chuyển mọi thứ vào API và người dùng nhận 404 ở trang chủ
+# dù image đã `COPY apps ./apps` — một lỗi "xanh CI, chết trên VPS".
+# ---------------------------------------------------------------------------------------------
+
+
+def test_web_dir_is_discovered_when_running_from_an_installed_package(monkeypatch, tmp_path):
+    """Mô phỏng bản cài trong image: gói ở site-packages, SPA ở `/app/apps/web`."""
+    from visynth_api import settings as settings_module
+
+    fake_app = tmp_path / "app" / "apps" / "web"
+    fake_app.mkdir(parents=True)
+    (fake_app / "index.html").write_text("<html></html>", encoding="utf-8")
+
+    # Thay danh sách ứng viên bằng đúng cảnh của image: không có "cạnh mã nguồn", chỉ có /app/apps/web.
+    monkeypatch.setattr(settings_module, "_WEB_DIR_CANDIDATES", (tmp_path / "khong-ton-tai", fake_app))
+    found = settings_module._find_web_dir()
+    assert found == fake_app, f"hàm tìm kiếm phải đi qua các ứng viên: {found}"
+
+    # Đọc thẳng mã nguồn: danh sách mặc định phải có đường dẫn trong image (monkeypatch ở trên đã
+    # thay biến trong bộ nhớ, nên không đọc lại biến đó được).
+    source = (ROOT / "apps" / "api" / "visynth_api" / "settings.py").read_text(encoding="utf-8")
+    assert 'Path("/app/apps/web")' in source
+
+
+def test_container_env_points_at_the_spa_inside_the_image():
+    compose = (ROOT / "infra" / "docker-compose.yml").read_text(encoding="utf-8")
+    dockerfile = (ROOT / "infra" / "Dockerfile").read_text(encoding="utf-8")
+    assert "VISYNTH_WEB_DIR: /app/apps/web" in compose, "compose phải nói rõ thư mục SPA trong image"
+    assert "COPY apps ./apps" in dockerfile, "image phải chứa apps/web"
+    assert (WEB / "index.html").is_file()
+
+
+def test_settings_search_looks_beyond_the_source_checkout():
+    """Hai đường dẫn dự phòng phải còn trong mã — bỏ chúng đi là quay lại lỗi 404 trên VPS."""
+    source = (ROOT / "apps" / "api" / "visynth_api" / "settings.py").read_text(encoding="utf-8")
+    assert 'Path("/app/apps/web")' in source
+    assert 'Path.cwd() / "apps" / "web"' in source

@@ -10,6 +10,26 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+#: Các vị trí SPA đã biết. Tách thành hằng số để test được (và để người đọc thấy ngay "image nằm ở đâu").
+_WEB_DIR_CANDIDATES: tuple[Path, ...] = (
+    Path(__file__).resolve().parents[3] / "apps" / "web",  # chạy từ kho mã
+    Path("/app/apps/web"),  # image Docker (WORKDIR /app, `COPY apps ./apps`)
+)
+
+
+def _find_web_dir() -> Path:
+    """Thư mục SPA: thử lần lượt các vị trí hợp lý và trả về cái ĐẦU TIÊN có `index.html`.
+
+    Thứ tự: cạnh mã nguồn (chạy từ kho mã) → `/app/apps/web` (image Docker) → `apps/web` trong thư
+    mục làm việc hiện tại. Trả về ứng viên đầu tiên dù chưa có `index.html` để thông báo lỗi nói tới
+    một đường dẫn có nghĩa.
+    """
+    candidates = [*_WEB_DIR_CANDIDATES, Path.cwd() / "apps" / "web"]
+    for candidate in candidates:
+        if (candidate / "index.html").is_file():
+            return candidate
+    return candidates[0]
+
 
 def _bool(name: str, default: bool = False) -> bool:
     raw = os.environ.get(name)
@@ -81,7 +101,13 @@ class Settings:
             self.parser_url = os.environ.get("VISYNTH_PARSER_URL", "").rstrip("/")
         if self.web_dir is None:
             env_web = os.environ.get("VISYNTH_WEB_DIR")
-            self.web_dir = Path(env_web) if env_web else Path(__file__).resolve().parents[3] / "apps" / "web"
+            if env_web:
+                self.web_dir = Path(env_web)
+            else:
+                # Không có biến môi trường thì phải TỰ TÌM, vì `pip install .` đặt gói vào
+                # site-packages: đường dẫn tính từ `__file__` khi đó không trỏ về mã nguồn, và SPA
+                # trên VPS sẽ 404 dù đã `COPY apps ./apps` vào image (bẫy đã gặp ở M2, vá ở M3).
+                self.web_dir = _find_web_dir()
         if not self.rate_limit_salt:
             # Muối riêng là tốt nhất, nhưng có muối suy ra vẫn hơn là lưu khoá băm "trần" (đối chiếu được
             # giữa các bản cài). Đổi `session_secret` sẽ làm bộ đếm bắt đầu lại — chấp nhận được.
