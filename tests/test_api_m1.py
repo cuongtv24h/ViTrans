@@ -269,6 +269,43 @@ def test_cancel_before_start_refunds(client, db):
 # --------------------------------------------------------------------------- cổng glossary
 
 
+def test_document_paragraphs_endpoint_serves_citations(client, db):
+    """Trang đọc mở nguyên văn đoạn nguồn của trích dẫn qua `/documents/{id}/paragraphs` (§6.8)."""
+    user = _register(client)
+    document = _upload(client, demo_text())
+    headers = {"Authorization": f"Bearer {user['token']}"}
+
+    every = client.get(f"/api/v1/documents/{document['id']}/paragraphs", headers=headers)
+    assert every.status_code == 200, every.text
+    items = every.json()["items"]
+    assert items and [row["idx"] for row in items] == sorted(row["idx"] for row in items)
+    assert all(row["pid"].startswith("P") and row["content"] for row in items)
+
+    wanted = items[0]["pid"]
+    one = client.get(
+        f"/api/v1/documents/{document['id']}/paragraphs?pids={wanted},P999999",
+        headers=headers,
+    )
+    assert one.status_code == 200
+    assert [row["pid"] for row in one.json()["items"]] == [wanted], "chỉ trả đúng pid được hỏi"
+
+    too_many = client.get(
+        f"/api/v1/documents/{document['id']}/paragraphs?pids={','.join(f'P{i:06d}' for i in range(1, 202))}",
+        headers=headers,
+    )
+    assert too_many.status_code == 422, too_many.text
+    assert too_many.json()["code"] == "too_many_pids"
+
+    # Không có quyền thì phải 404, kể cả khi pid đúng (không rò rỉ nội dung tài liệu người khác).
+    # Chú ý: `_register` đặt cookie phiên của người mới vào client, nên ca này phải chạy SAU CÙNG.
+    other = _register(client, email="nguoikhac@example.com")
+    denied = client.get(
+        f"/api/v1/documents/{document['id']}/paragraphs?pids={wanted}",
+        headers={"Authorization": f"Bearer {other['token']}"},
+    )
+    assert denied.status_code == 404
+
+
 def test_glossary_gate_awaits_then_resumes(client, db):
     me = _register(client)
     _grant(db, me["user"]["id"], 100)

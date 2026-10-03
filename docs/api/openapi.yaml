@@ -27,6 +27,87 @@ tags:
 - {name: curation}
 - {name: public}
 paths:
+  /auth/register:
+    post:
+      tags: [account]
+      operationId: register
+      summary: Tạo tài khoản bằng email + mật khẩu (M1 dùng xác thực nội bộ; Google OAuth + OTP ở M2)
+      description: |
+        Cần `invite_code` trừ khi máy chủ bật `VISYNTH_OPEN_SIGNUP=1`. Bắt buộc xác nhận điều khoản,
+        đồng ý chuyển dữ liệu xuyên biên giới và đủ tuổi (PDPL §14.3). Trả token phiên và đặt cookie
+        phiên `HttpOnly` cho web.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: {type: string, format: email}
+                password: {type: string, minLength: 8, maxLength: 200}
+                invite_code:
+                  type: [string, 'null']
+                  pattern: '^[A-Za-z0-9-]{6,32}$'
+                display_name:
+                  type: [string, 'null']
+                  maxLength: 120
+                locale: {type: string, default: vi}
+                tos_version:
+                  type: [string, 'null']
+                  description: Phiên bản điều khoản người dùng đã đọc; hệ thống ghi lại thời điểm
+                consent_cross_border: {type: boolean, default: false}
+                consent_shared_processing: {type: boolean, default: false}
+                age_confirmed: {type: boolean, default: false}
+      responses:
+        '201':
+          description: Đã tạo tài khoản
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthSession'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Problem'}
+        '422': {$ref: '#/components/responses/Problem'}
+  /auth/login:
+    post:
+      tags: [account]
+      operationId: login
+      summary: Đăng nhập bằng email + mật khẩu
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: {type: string, format: email}
+                password: {type: string, minLength: 1, maxLength: 200}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/AuthSession'}
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Problem'}
+  /auth/logout:
+    post:
+      tags: [account]
+      operationId: logout
+      summary: Đăng xuất (xoá cookie phiên)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: {type: boolean}
   /me:
     get:
       tags: [account]
@@ -184,6 +265,36 @@ paths:
       responses:
         '204': {description: Đã xoá}
         '404': {$ref: '#/components/responses/NotFound'}
+  /documents/{documentId}/paragraphs:
+    parameters:
+    - name: documentId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+    get:
+      tags: [documents]
+      operationId: getDocumentParagraphs
+      summary: Đoạn nguồn theo `pid` để trang đọc mở phần đối chiếu nguồn của trích dẫn
+      description: |
+        Trang đọc báo cáo hiển thị mỗi khối kèm các `pid` nguồn; bấm vào trích dẫn gọi điểm cuối này
+        để lấy NGUYÊN VĂN đoạn nguồn. Chỉ chủ tài liệu đọc được; không trả gì ngoài `pid`, `idx`,
+        `kind`, `content` và số trang.
+      parameters:
+      - name: pids
+        in: query
+        schema: {type: string}
+        description: Danh sách `pid` cách nhau bằng dấu phẩy (tối đa 200); bỏ trống = cả tài liệu
+      - name: limit
+        in: query
+        schema: {type: integer, minimum: 1, maximum: 1000, default: 200}
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ParagraphPage'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '422': {$ref: '#/components/responses/Problem'}
   /jobs/estimate:
     post:
       tags: [jobs]
@@ -1710,6 +1821,36 @@ components:
             max_words_per_document: {type: integer}
             max_words_full_translation: {type: integer}
             max_active_jobs: {type: integer}
+    AuthSession:
+      type: object
+      required: [user, token]
+      properties:
+        user: {$ref: '#/components/schemas/Me'}
+        token:
+          type: string
+          description: Token phiên tự chứa (ký HMAC); web dùng cookie `HttpOnly`, client khác dùng Bearer
+        credits_granted: {type: integer}
+    ParagraphPage:
+      type: object
+      required: [document_id, items]
+      properties:
+        document_id: {type: string, format: uuid}
+        requested: {type: integer, description: Số `pid` được hỏi}
+        returned: {type: integer}
+        items:
+          type: array
+          items:
+            type: object
+            required: [pid, idx, content]
+            properties:
+              pid: {type: string, pattern: '^P[0-9]{6,}$'}
+              idx: {type: integer}
+              kind: {type: string}
+              content: {type: string}
+              page_start:
+                type: [integer, 'null']
+              page_end:
+                type: [integer, 'null']
     CreditsPage:
       type: object
       required: [balance, items]

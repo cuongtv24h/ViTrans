@@ -39,7 +39,7 @@ Cấu trúc theo §5.6 của SPEC.md (monorepo, tên tạm `visynth/`):
 
 ```
 visynth/
-├─ apps/web/            # Next.js (M2)
+├─ apps/web/            # SPA không bước build: ES modules + CSS thuần (M2)
 ├─ apps/api/            # FastAPI (M1)
 ├─ apps/worker/         # pipeline, parser sandbox, pool/ (Router + 2 adapter)
 ├─ packages/contracts/  # schemas/, openapi.yaml, kiểu TS sinh tự động
@@ -143,13 +143,33 @@ Ba việc dời có chủ ý: (a) P9 `full_translation`, P10 OCR, P11, P12/P13 (
 
 **Sai lệch có chủ ý (theo dõi để gỡ):** (0) cổng glossary lấy gợi ý từ P1 ngay trong giai đoạn `glossary` (đúng §6.4); khi người dùng xác nhận, giai đoạn này **chạy lại bằng danh sách đã duyệt và không gọi P1 lần nữa** — P1 chạy đúng một lần cho mỗi job; (a) xác thực M1 dùng email + mật khẩu (bảng `local_credentials`, scrypt) vì
 SPEC §20.2 chọn Google OAuth + email OTP — sẽ thay ở M2; (b) `/me` trả thêm `jobs`/`limits` so với `Me` trong
-OpenAPI (tiện cho giao diện, không phá hợp đồng); (c) `/auth/*` chưa có trong `openapi.yaml`, cần bổ sung trước M2.
+OpenAPI (tiện cho giao diện, không phá hợp đồng); (c) ~~`/auth/*` chưa có trong `openapi.yaml`~~ **đã bổ sung**
+(`/auth/register`, `/auth/login`, `/auth/logout` + schema `AuthSession`), cùng điểm cuối mới
+`GET /documents/{documentId}/paragraphs` cho trích dẫn; (d) **giao diện M2 là SPA không bước build** (ES
+modules + CSS thuần, phục vụ tĩnh) thay cho Next.js của SPEC §20.3 — lý do: trên VPS một tiến trình ít hơn,
+không cần Node trong image, không có bước sinh mã để lệch với bản đã kiểm; chuyển sang Next.js khi cần SEO
+hoặc trang giới thiệu công khai.
 
 ### M2 — Frontend MVP (3–4 tuần)
 
 Wizard 3 bước (kèm chế độ riêng tư và đồng ý), cổng glossary, trang đọc có trích dẫn, xuất MD/DOCX/PDF, quản lý glossary, Admin (kèm `/admin/pool` — một cách nhập khoá duy nhất, §17.14), giao diện duyệt Lõi văn phong và hàng đợi thuật ngữ (§19.6).
 
 **Thoát mốc:** 3–5 người thử hoàn thành F2 không cần hướng dẫn; curator duyệt trọn một lõi và một bản glossary từ đầu đến cuối.
+
+#### Tiến độ M2 (cập nhật 2026-10-03)
+
+| Hạng mục | Trạng thái | Ghi chú |
+|---|---|---|
+| Vỏ SPA + định tuyến | 🟢 mã xong | `apps/web/`: `index.html` + `app.js` (hash routing, phiên, điều hướng theo vai trò) + `lib/api.js`, `lib/md.js`, `lib/ui.js`. Không bước build, không phụ thuộc CDN, không dùng `localStorage` cho token. Phục vụ tĩnh bằng FastAPI (`StaticFiles` gắn sau cùng) khi chạy một tiến trình; trên VPS Caddy chuyển tiếp toàn bộ về `api` (cùng gốc ⇒ không CORS, cookie `HttpOnly` tự gửi, SSE không qua hai tầng proxy). Test: `tests/test_web_spa.py` (8 ca, gồm `node --check` và kiểm đồ thị import) |
+| Wizard 3 bước (F2) | 🟢 mã xong | Tải tài liệu + xác nhận quyền → mức/glossary/lõi văn phong/chế độ riêng tư + **báo giá từ `POST /jobs/estimate`** → xác nhận và tạo job (`Idempotency-Key` sinh ở client, bấm lại không trừ tiền hai lần) |
+| Cổng glossary | 🟢 mã xong | `GET/POST /jobs/{id}/glossary*`: bảng duyệt sửa được cách dịch, giữ nguyên/bỏ qua từng mục, lưu vào glossary cá nhân; hạn tự động xác nhận hiển thị rõ |
+| Trang đọc có trích dẫn (F3) | 🟢 mã xong | `GET /reports/{id}` → mục/khối; mỗi khối hiện `pid` nguồn, bấm mở **nguyên văn đoạn nguồn** qua điểm cuối mới `GET /documents/{id}/paragraphs?pids=…`; đánh cờ đoạn sai (`POST /reports/{id}/blocks/{id}/flag`), chấm sao + nhận xét |
+| Xuất MD/DOCX/PDF | 🟢 mã xong | Nút xuất cho `md|docx|pdf|html` và **bản song ngữ** (`?bilingual=true`, chỉ `full_translation`); tải tệp qua blob, giữ tên tệp; mọi tệp kèm thông báo AI |
+| Quản lý glossary | 🟢 mã xong | Tạo glossary, thêm từng mục hoặc **dán nhanh nhiều dòng** (`nguồn = đích`), sửa/xoá, xuất CSV (UTF-8 BOM) |
+| Admin `/admin/pool` (§17.14) | 🟢 mã xong | Deployment (bật/tắt, thử kiểm định), **nhập khoá duy nhất** (chọn nhóm + dán khoá; chỉ hiện `••••last4` và tham chiếu `enc:<id>`), khai báo nhanh YAML/JSON có `dry_run`, sự cố, dung lượng |
+| Duyệt Lõi văn phong + hàng đợi thuật ngữ (§19.6) | 🟢 mã xong | Tab riêng: phiên bản (gửi → P12 chất vấn → trả lời → duyệt/từ chối, kèm chạy thử), hàng đợi `glossary-review` với quyết định duyệt/sửa-rồi-duyệt/loại |
+| Vận hành | 🟢 mã xong | Trần chi tiêu, mã mời (tạo + hiện mã một lần), người dùng (vai trò/trạng thái), sử dụng 14 ngày, nhật ký kiểm toán |
+| **Kiểm thử với người thật (thoát mốc)** | 🔴 chưa | Cần 3–5 người thử hoàn thành F2 không cần hướng dẫn; làm sau khi dựng VPS (theo chỉ đạo: kiểm chứng để sau) |
 
 ### M3 — Làm cứng và beta (2 tuần) → **cổng A**
 

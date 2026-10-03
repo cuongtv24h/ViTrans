@@ -154,6 +154,32 @@ make test-db        # tests/test_db_schema.py + tests/test_api_m1.py
 Đăng nhập ở M1 là **email + mật khẩu nội bộ** (bảng `local_credentials`, scrypt) để chạy được khép kín
 trước khi nối Google OAuth + email OTP (M2) — ghi ở `docs/BUILD_PLAN.md` mục tiến độ M1.
 
+## Giao diện (M2): SPA không bước build
+
+Giao diện nằm ở `apps/web/` — **ES modules + CSS thuần**, không Node, không bundler. API phục vụ luôn
+tệp tĩnh ở đường gốc (gắn SAU các tuyến `/api/v1/…`), nên chỉ cần chạy một tiến trình:
+
+```bash
+# cùng lệnh API ở trên, rồi mở http://localhost:8000/
+uvicorn visynth_api.app:build_app --factory --host 0.0.0.0 --port 8000
+```
+
+Trên VPS, Caddy chuyển tiếp mọi đường dẫn về `api` (cùng gốc ⇒ cookie phiên `HttpOnly` tự gửi, không CORS,
+SSE không qua hai tầng proxy). Biến `VISYNTH_WEB_DIR` trỏ tới thư mục tệp tĩnh khi chạy ngoài kho mã;
+nếu không có SPA, API vẫn chạy bình thường (chỉ ghi cảnh báo trong log).
+
+Các màn hình: wizard 3 bước (tải tài liệu → mức/glossary/chế độ riêng tư + báo giá → xác nhận), tiến độ job
+qua SSE + **cổng duyệt thuật ngữ**, trang đọc có trích dẫn mở được nguyên văn nguồn, xuất MD/DOCX/PDF/HTML
+kèm bản song ngữ, quản lý glossary, tài khoản, và khu quản trị `/admin/pool` (nhập khoá duy nhất), duyệt Lõi
+văn phong, hàng đợi thuật ngữ, vận hành.
+
+Kiểm tra giao diện bằng test thay cho bước build (đồ thị import, cú pháp JS bằng `node --check` nếu có Node,
+các màn hình bắt buộc, không tài nguyên ngoài, không `localStorage` cho token):
+
+```bash
+pytest tests/test_web_spa.py
+```
+
 ## Kiểm tra
 
 ```bash

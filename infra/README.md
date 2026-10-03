@@ -124,6 +124,5 @@ curl -fsS https://$VISYNTH_DOMAIN/api/v1/healthz  # 5. kiểm thử khói (AC-01
 
 - **`web` SPA** thay cho Next.js của §20.3: M2 phục vụ tệp tĩnh bằng FastAPI (dev) và Caddy (VPS) —
   ghi ở `docs/BUILD_PLAN.md` mục "sai lệch có chủ ý".
-- **`web`** (Next.js) chỉ có ở mốc M2 — Caddy đã chừa chỗ ở nhánh `handle { … }`.
 - **WAL lưu ngoài máy** (RPO tính bằng phút) cần cho cổng C, khi sổ tín dụng đã có tiền thật (§20.6).
 - **Hồ sơ PDPL** (đánh giá tác động, thoả thuận chuyển dữ liệu) là việc giấy tờ ở §20.8, không phải việc mã.

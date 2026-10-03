@@ -1095,7 +1095,7 @@ curation_runs (P12, P13, thử lõi)   glossaries ─< glossary_entries (status:
 
 ## 11. API và sự kiện thời gian thực
 
-Đặc tả đầy đủ (61 đường dẫn, kiểm tra bằng `openapi-spec-validator`): `api/openapi.yaml`. Nhóm `pool`, `style-cores`, `curation` chỉ dành cho admin và curator (vai trò `curator` được duyệt Lõi văn phong và glossary chuẩn nhưng không đụng tới pool, khoá hay tiền).
+Đặc tả đầy đủ (65 đường dẫn, kiểm tra bằng `openapi-spec-validator`): `api/openapi.yaml`. Nhóm `pool`, `style-cores`, `curation` chỉ dành cho admin và curator (vai trò `curator` được duyệt Lõi văn phong và glossary chuẩn nhưng không đụng tới pool, khoá hay tiền).
 
 ### 11.1 Quy ước
 
@@ -1107,6 +1107,9 @@ curation_runs (P12, P13, thử lõi)   glossaries ─< glossary_entries (status:
 
 | Nhóm | Phương thức | Đường dẫn | Mô tả |
 |---|---|---|---|
+| Tài khoản | `POST` | `/auth/register` | Tạo tài khoản bằng email + mật khẩu (M1 dùng xác thực nội bộ; Google OAuth + OTP ở M2) |
+| Tài khoản | `POST` | `/auth/login` | Đăng nhập bằng email + mật khẩu |
+| Tài khoản | `POST` | `/auth/logout` | Đăng xuất (xoá cookie phiên) |
 | Tài khoản | `GET` | `/me` | Thông tin người dùng hiện tại, số dư tín dụng, hạn mức |
 | Tài khoản | `POST` | `/me/consents` | Ghi các đồng ý RIÊNG (điều khoản, chuyển dữ liệu ra nước ngoài, chế độ Tiết kiệm) và xác nhận từ 18 tuổi |
 | Tài khoản | `GET` | `/credits` | Số dư và sổ cái tín dụng (phân trang) |
@@ -1115,6 +1118,7 @@ curation_runs (P12, P13, thử lõi)   glossaries ─< glossary_entries (status:
 | Tài liệu | `POST` | `/documents` | Tải file lên hoặc dán văn bản |
 | Tài liệu | `GET` | `/documents/{documentId}` | Chi tiết và trạng thái bóc tách của một tài liệu |
 | Tài liệu | `DELETE` | `/documents/{documentId}` | Xoá tài liệu gốc ngay (file + đoạn văn) |
+| Tài liệu | `GET` | `/documents/{documentId}/paragraphs` | Đoạn nguồn theo `pid` để trang đọc mở phần đối chiếu nguồn của trích dẫn |
 | Job | `POST` | `/jobs/estimate` | Ước tính tín dụng và thời gian TRƯỚC khi tạo job (không trừ tín dụng) |
 | Job | `GET` | `/jobs` | Danh sách job của tôi (lọc theo trạng thái) |
 | Job | `POST` | `/jobs` | Tạo job (trừ tín dụng nguyên tử qua charge_credits, đặt hàng đợi) |

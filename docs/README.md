@@ -19,7 +19,7 @@ Bộ đặc tả kỹ thuật & sản phẩm cho ứng dụng web **chuyển ng�
 | `prompts/` | 13 prompt (P0-P10, P12-P13) + Lõi văn phong mặc định trung tính (`00_style_core_neutral.json`) |
 | `schemas/`, `examples/` | 18 JSON Schema và ví dụ khớp từng schema (gồm `pool_config`, `pool_declaration`, `style_core`, `style_core_proposal`, `glossary_proposals`) |
 | `db/schema.sql` | PostgreSQL: 47 bảng + hàm nghiệp vụ (tín dụng, hàng đợi, giá LLM, trần chi tiêu, **đặt chỗ pool nguyên tử**, phát hành glossary, tính bất biến của Lõi văn phong) |
-| `api/openapi.yaml` | OpenAPI 3.1 (61 đường dẫn) |
+| `api/openapi.yaml` | OpenAPI 3.1 (65 đường dẫn, gồm `/auth/*` và đoạn nguồn cho trích dẫn) |
 | `reference/`, `tests/` | Code tham chiếu và test (trích đoạn, thuật ngữ, số liệu, chi phí, **LLM Pool**, **khai báo và mã hoá khoá**, **Lõi văn phong**, structured output) |
 | `tools/` | `validate_spec.py` (kiểm tra nhất quán), `build_spec.py` (dựng SPEC.md), `simulate_pool.py` (mô phỏng pool) |
 
