@@ -231,4 +231,60 @@ Hỏi đáp có trích dẫn, đối chiếu nguồn song song, URL/YouTube, cô
 2. Chốt Q12/Q13 (khoá thật) và Q11 (tài liệu mẫu + curator lĩnh vực đầu).
 3. Bắt đầu W1 của M0; kết thúc W4 bằng báo cáo `eval/` + quyết định đi tiếp.
 
+---
+
+## 7. Việc còn lại để hoàn thiện sản phẩm (danh sách kiểm)
+
+*Trạng thái chốt: 2026-10-03, commit `d76eab3`. Mỗi việc ghi rõ **xong khi nào** để không có chuyện
+"đã làm gần xong". Việc nào không cần VPS/khoá thật thì nằm ở nhóm A và làm được ngay.*
+
+### A. Làm được ngay trong sandbox (không cần VPS, không cần khoá thật)
+
+| # | Việc | Vì sao còn thiếu | Xong khi |
+|---|---|---|---|
+| A1 | **Chỉ số Prometheus §15** — thêm `/metrics` (job, token, chi phí, lỗi, hàng đợi, OCR, hoàn tín dụng; nhóm pool: headroom, wait, circuit, spill, shadow, private violations) | Chưa có điểm cuối chỉ số nào; `/healthz` chỉ có vài con số tổng | `curl /metrics` trả đúng định dạng Prometheus, số liệu lấy từ CSDL/sổ `llm_calls`, có test; `visynth_pool_private_violations_total` luôn bằng 0 và tách riêng |
+| A2 | **Cảnh báo theo TỶ LỆ của §15** — chi tiêu ≥ 80% trần ngày (khẩn), job hỏng > 10% trong 15 phút (khẩn), p95 chờ hàng đợi > 5 phút, 429 của LLM > 5%, hạng C > 20%/ngày, private violation > 0 (khẩn) | `alerts.py` mới có ngưỡng tuyệt đối trên số đếm | Mỗi điều kiện có cách tính + test + hiện ở `/healthz?detail=1` và `ops health`; có ca thử "hệ thống khoẻ thì im" |
+| A3 | **2FA cho admin (TOTP + mã dự phòng)** | §20.4 yêu cầu 2FA cho Admin; mã chưa có gì | Bật TOTP, đăng nhập admin bắt buộc mã thứ hai, mã dự phòng dùng một lần, có test |
+| A4 | **Hàng đợi xử lý takedown cho admin** | `POST /takedown` đã có (catalog) nhưng không có màn hình/điểm cuối để xem và xử lý, cũng không thông báo cho người gửi | Admin xem danh sách, đổi trạng thái, ghi `audit_log`; người gửi nhận xác nhận (khi đã có tầng email A10) |
+| A5 | **Đóng bớt bề mặt tài liệu**: `/docs` (Swagger) và `/api/v1/openapi.json` | Đang mở công khai; trên VPS Caddy chuyển mọi thứ vào API nên chúng ra Internet | Tắt mặc định khi chạy thật (hoặc chỉ mở cho admin), có test |
+| A6 | **CI chặt hơn**: (a) kiểm toán giấy phép (chặn AGPL, ví dụ PyMuPDF); (b) chạy test CSDL trên PostgreSQL của CI và **fail nếu ca CSDL bị BỎ QUA** thay vì im lặng xanh | §4/§14.5 yêu cầu; hiện CI chỉ chạy `pytest` và một ca bỏ qua sẽ không ai biết | Có bước CI mới; thử phá (bỏ `pgserver`) thì CI đỏ |
+| A7 | **Bộ kiểm an toàn hệ thống** (§14.5 bullet 3): zip-bomb/tệp độc hại qua parser sandbox, zip-slip/XXE trong DOCX/EPUB, IDOR xuyên người dùng, XSS trong báo cáo/glossary, không lộ khoá trong log/phản hồi | Hiện mới rải rác trong vài tệp test, chưa phải bằng chứng chạy lại được cho cổng | Một tệp test an toàn, mỗi mục là một ca; đỏ khi cố tình phá |
+| A8 | **Diễn tập "chạm trần chi tiêu"** (còn thiếu trong 4 kịch bản đã có) | §14.5 yêu cầu diễn tập chạm trần; hiện có logic `spend_cap_reached` + test CSDL nhưng chưa có diễn tập đầu-cuối | Thêm kịch bản: chạm trần → `POST /jobs` trả 503 → gỡ trần → job chạy lại được |
+| A9 | **Nợ giao diện M2**: nhập CSV glossary trên UI (API `POST /glossaries/{id}/import` đã có), phân trang hàng đợi duyệt glossary (đang chỉ in con trỏ dạng chữ) | Người dùng phải gọi API thủ công | Nhập tệp trong trang glossary; có nút "trang sau" cho hàng đợi |
+| A10 | **Tầng gửi email giao dịch** (OTP, xác minh email, mã mời, "job xong") | Chưa có mã gửi thư nào; đây là điều kiện của M4 và của thông báo A4 | Chọn nhà cung cấp, lớp gửi thư + mẫu tiếng Việt, chạy được ở chế độ thử (ghi ra tệp) khi chưa có khoá |
+
+### B. Phải làm trên VPS / máy bạn (không làm được trong sandbox) — đường tới **cổng A**
+
+| # | Việc | Xong khi |
+|---|---|---|
+| B1 | Dựng máy theo `infra/README.md` mục 0→7 (SSH chỉ khoá, `ufw` 80/443, cập nhật tự động, Docker, bí mật, `.env`, `docker compose up`, migration, tạo admin) | `https://<tên miền>` mở SPA, `/api/v1/healthz` trả 200, chứng chỉ TLS hợp lệ |
+| B2 | **Nạp khoá thật + probe thật**: chạy `visynth pool probe`, điền số đo thật (rpm/rpd/tpm/tpd/concurrency) vào `pool_config`, `risk_ack`, `allowed_gates` | Mọi deployment bật đều đã qua probe; `ops health` không còn cảnh báo về pool |
+| B3 | Bật giám sát ngoài máy (Uptime Kuma/healthchecks) + "dead man's switch" cho cron sao lưu | Cố tình tắt API → có tin báo trong vài phút; `/healthz?detail=1` đổi màu đúng khi có sự cố thật |
+| B4 | **Diễn tập khôi phục ≤ 4 giờ (AC-25)**: backup → thuê VPS mới → khôi phục → `ops reap` → kiểm sổ tín dụng | Thời gian thật được ghi vào `infra/README.md`; cột mốc là ≤ 4 giờ |
+| B5 | **Kiểm chứng chất lượng (đang hoãn theo chỉ đạo)**: golden set, bake-off/probe thật, hiệu chỉnh hằng số chi phí, chọn lĩnh vực đầu + Lõi văn phong theo lĩnh vực | `eval/report.md` có số thật; KPI §2.2 đo được trên job thật |
+| B6 | **Beta 20–30 người bằng mã mời**; đo "hoàn thành F2 không cần hướng dẫn" (điều kiện thoát M2 chưa đạt) + điểm beta ≥ 4/5 | Có bảng phản hồi và danh sách lỗi ưu tiên sửa |
+| B7 | Kiểm §14.5 phần cổng A: khoá trả phí thuộc dự án riêng + tách biến môi trường; kiểm toán "job `private` chạm nhóm không `no_training`" = **0 hàng** | Truy vấn kiểm toán trả 0; ảnh chụp màn hình/kết quả lưu vào `docs/` |
+
+### C. M4 → **cổng B**
+
+| # | Việc | Ghi chú |
+|---|---|---|
+| C1 | Đăng ký mở: xác minh email + **Turnstile** + giới hạn số đăng ký mới/ngày + hàng chờ khi chạm trần + **mặc định `private`** cho người mới | §13.4, §14.5 dòng B |
+| C2 | **Google OAuth** (FR-01 xếp vào MVP; hiện dùng email + mật khẩu nội bộ làm chỗ đứng) | Cần cùng lúc với A10 |
+| C3 | Pháp lý: ToS/Privacy/Cookie bản luật sư duyệt; hồ sơ PDPL (đánh giá tác động xử lý + chuyển dữ liệu ra nước ngoài); thoả thuận chuyển dữ liệu với từng bên nhận; phân loại rủi ro Luật AI; xác minh thời hạn lưu phía API LLM và tắt lưu nếu có | §20.8, §14.5. Trang `/legal` đã có bản nháp mô tả đúng luồng dữ liệu — cần luật sư soát và bổ sung tên/liên hệ bên kiểm soát |
+| C4 | Đo chi phí/người dùng ổn định 2 tuần | Điều kiện thoát M4 |
+
+### D. Sau MVP → **cổng C** (P2/P3)
+
+| # | Việc |
+|---|---|
+| D1 | Hỏi đáp có trích dẫn; đối chiếu nguồn song song; URL/YouTube; công thức người dùng; nhiều tài liệu trong một báo cáo; API công khai |
+| D2 | Thanh toán (cần pháp nhân + hoá đơn), WAL/PITR cho sổ tín dụng (RPO tính bằng phút), thêm máy thứ hai khi CPU > 80% kéo dài |
+
+### E. Sai lệch có chủ ý đang giữ (ghi để không quên)
+
+- SPA không bước build thay cho Next.js của §20.3 (đã ghi ở mục "sai lệch có chủ ý" của M2).
+- Bỏ Redis: giới hạn tốc độ dùng PostgreSQL, SSE dùng tiến trình API (§5.2 cho phép).
+- Ba việc M0 được hoãn theo chỉ đạo "kiểm chứng để sau": golden set thật, probe/bake-off thật, hiệu chỉnh hằng số chi phí — nay nằm ở B5.
+
 *Cập nhật tài liệu này khi: đổi phạm vi mốc, đổi nhân lực, hoặc sau mỗi lần chấm golden set.*
