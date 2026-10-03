@@ -7,6 +7,7 @@ thông báo "nội dung do AI tổng hợp" ở đầu và cuối (Luật AI 134
 from __future__ import annotations
 
 import io
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -154,27 +155,26 @@ def export_report(
     bilingual: bool = False,
     user: dict = Depends(current_user),
 ) -> Response:
-    """Xuất file (cache ở bảng `exports`): `md`, `html`, `docx`; `pdf` chưa hỗ trợ ở M1."""
+    """Xuất tệp (cache ở bảng `exports`): `md`, `html`, `docx`, `pdf`.
+
+    `?bilingual=true` chỉ dùng được với `level=full_translation`: ghép nguyên văn nguồn (`doc_paragraphs`)
+    với bản dịch (`translation_items`) theo `pid` (§6.10).
+    """
     db: Database = _db(request)
     report = _report_or_404(db, report_id, user)
-    if bilingual:
-        raise Problem(422, "bilingual_unsupported", "xuất song ngữ chỉ áp dụng cho level=full_translation (M2)")
-    if format == "pdf":
-        raise Problem(501, "pdf_not_available", "xuất PDF sẽ bật cùng bộ chuyển đổi ở M2; dùng md/docx/html")
-    markdown = db.scalar("SELECT markdown FROM reports WHERE id = %s", (report_id,)) or ""
-    if not markdown:
-        raise Problem(409, "report_not_ready", "báo cáo chưa có nội dung")
-    document = _with_notice(markdown, report["title"])
+    document = _export_document(db, report, bilingual=bilingual)
     if format == "md":
         payload, media, ext = document.encode("utf-8"), "text/markdown; charset=utf-8", "md"
     elif format == "html":
         payload, media, ext = _to_html(document).encode("utf-8"), "text/html; charset=utf-8", "html"
-    else:
+    elif format == "docx":
         payload, media, ext = (
             _to_docx(document),
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             "docx",
         )
+    else:
+        payload, media, ext = _to_pdf(document, report["title"]), "application/pdf", "pdf"
 
     storage_dir = Path(request.app.state.settings.upload_dir) / "exports"
     storage_dir.mkdir(parents=True, exist_ok=True)
@@ -206,6 +206,72 @@ def export_report(
 def _with_notice(markdown: str, title: str) -> str:
     banner = f"> ⚠️ {AI_NOTICE}\n\n"
     return f"# {title}\n\n{banner}{markdown}\n\n---\n\n{AI_NOTICE}\n"
+
+
+def _export_document(db: Database, report: dict, *, bilingual: bool) -> str:
+    """Nội dung để xuất: bản Markdown của báo cáo, hoặc bản **song ngữ** với mức `full_translation`."""
+    if bilingual:
+        if report["level"] != "full_translation":
+            raise Problem(422, "bilingual_unsupported", "xuất song ngữ chỉ áp dụng cho level=full_translation")
+        from visynth.pipeline.translate import Item
+        from visynth.render import bilingual_markdown, bilingual_pairs, translation_notes
+
+        rows = db.all(
+            "SELECT pid, content FROM doc_paragraphs WHERE document_id = %s ORDER BY idx",
+            (report["document_id"],),
+        )
+        items = [
+            Item(
+                pid=row["pid"],
+                vi=row["vi"] or "",
+                note_vi=row["note_vi"],
+                flagged=bool(row["flagged"]),
+            )
+            for row in db.all(
+                "SELECT pid, vi, note_vi, flagged FROM translation_items WHERE job_id = %s ORDER BY pid",
+                (report["job_id"],),
+            )
+        ]
+        if not items:
+            raise Problem(409, "translation_not_ready", "bản dịch chưa sẵn sàng")
+        source_title = db.scalar("SELECT title FROM documents WHERE id = %s", (report["document_id"],)) or ""
+        merged = bilingual_markdown(
+            title=report["title"],
+            source_title=source_title or report["title"],
+            pairs=bilingual_pairs(_SimpleParagraphs(rows), items),
+            notes=translation_notes(items),
+        )
+        return _with_notice(merged, report["title"])
+    markdown = db.scalar("SELECT markdown FROM reports WHERE id = %s", (report["id"],)) or ""
+    if not markdown:
+        raise Problem(409, "report_not_ready", "báo cáo chưa có nội dung")
+    return _with_notice(markdown, report["title"])
+
+
+@dataclass(frozen=True)
+class _SimpleParagraph:
+    pid: str
+    content: str
+
+
+class _SimpleParagraphs:
+    """Bọc hàng `doc_paragraphs` thành đối tượng có `.pid`/`.content` cho bộ ghép song ngữ."""
+
+    def __init__(self, rows: list[dict]) -> None:
+        self._rows = [_SimpleParagraph(row["pid"], row["content"]) for row in rows]
+
+    def __iter__(self):
+        return iter(self._rows)
+
+
+def _to_pdf(markdown: str, title: str) -> bytes:
+    """Markdown → PDF (SPEC §13). Thiếu font/thư viện thì API trả 501 như trước."""
+    from visynth.render import PdfRenderError, render_pdf
+
+    try:
+        return render_pdf(markdown, title=title, footer=AI_NOTICE)
+    except PdfRenderError as exc:
+        raise Problem(501, "pdf_not_available", str(exc)) from exc
 
 
 def _to_html(markdown: str) -> str:

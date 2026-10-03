@@ -10,9 +10,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     VISYNTH_UPLOAD_DIR=/data/uploads
 
-# `libmagic` để nhận dạng tệp; `curl` cho healthcheck; `tini` làm init (dọn tiến trình con).
+# `libmagic` để nhận dạng tệp; `curl` cho healthcheck; `tini` làm init (dọn tiến trình con);
+# `fonts-dejavu-core` để kết xuất PDF tiếng Việt (fpdf2 không kèm font Unicode).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libmagic1 curl tini \
+ && apt-get install -y --no-install-recommends libmagic1 curl tini fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
