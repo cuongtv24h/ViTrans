@@ -33,6 +33,27 @@ tests/                   # test của mã sản phẩm
 
 **Nguồn sự thật duy nhất:** schema (`docs/schemas/`), prompt (`docs/prompts/`), DDL (`docs/db/schema.sql`) và OpenAPI (`docs/api/openapi.yaml`) vẫn nằm trong bộ đặc tả. Mã sản phẩm đọc chúng qua biến môi trường (`VISYNTH_SCHEMAS_DIR`, `VISYNTH_PROMPTS_DIR`, …) với mặc định là `docs/…`; chỉ tách bản sao khi cần phát hành gói riêng.
 
+## MVP chạy ngay (không Docker)
+
+Muốn thấy các luồng thật chạy (tải tài liệu → bóc tách → báo giá → tạo job → duyệt glossary →
+báo cáo → mở đoạn nguồn theo trích dẫn → xuất MD/HTML) mà không cần Docker, VPS hay khoá API:
+
+```bash
+python -m venv /tmp/venv && /tmp/venv/bin/pip install -e ".[dev]" pgserver
+/tmp/venv/bin/python tools/dev.py up      # PostgreSQL nhúng + dữ liệu mẫu + API + worker (cổng 8080)
+# mở http://localhost:8080/ — demo@vitrans.example.com / demo-12345, mã mời DEMO-MOI-2026
+/tmp/venv/bin/python tools/dev.py flow    # chạy trọn luồng qua HTTP, in từng bước đạt/chưa
+```
+
+Không có khoá ⇒ worker chạy `--fake` (đề xuất giả, **0 token, 0 đồng**), nên kiểm được đường ống chứ
+không phải chất lượng bản dịch. Muốn nội dung thật: `python tools/dev.py keys` — hỏi khoá Gemini +
+NVIDIA, ghi thẳng vào `.env` quyền 600 và **không bao giờ in lại khoá** — rồi chạy `up` lần nữa; pool
+thật được gieo vào CSDL, model chọn bằng `GET /models` với chính khoá đó. Thêm `status` để xem trạng
+thái và `reset` để xoá dữ liệu dev (nằm ở `/tmp/visynth-dev`).
+
+Đây là đường **chạy thử** (hạn mức nới rộng, cookie không `Secure`) — không dùng để lên VPS. Cấu hình
+thật ở `infra/`, danh sách việc còn lại ở `docs/BUILD_PLAN.md` §7.
+
 ## Chạy thử (M0)
 
 ```bash

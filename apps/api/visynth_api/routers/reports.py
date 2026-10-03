@@ -95,6 +95,7 @@ def get_report(report_id: str, request: Request, user: dict = Depends(current_us
         by_section.setdefault(block["section_id"], []).append(block)
     return {
         **_public(report),
+        "unit_sources": _unit_sources(db, report["job_id"], blocks),
         "markdown": db.scalar("SELECT markdown FROM reports WHERE id = %s", (report_id,)),
         "sections": [dict(section, blocks=by_section.get(section["section_id"], [])) for section in sections],
         "citations": db.all(
@@ -142,6 +143,26 @@ def report_feedback(report_id: str, body: FeedbackIn, request: Request, user: di
         (report_id, user["id"], body.rating, body.tags, body.comment),
     )
     return Response(status_code=204)
+
+
+def _unit_sources(db: Database, job_id: str, blocks: list[dict]) -> dict[str, list[str]]:
+    """Đơn vị tri thức được trích dẫn → `pid` đoạn nguồn của nó (`knowledge_units.evidence`).
+
+    `report_blocks.cites` chứa id đơn vị (`U-0001`) theo SPEC §6.8, còn trang đọc cần `pid` để mở
+    nguyên văn đoạn nguồn. Trả kèm bản đồ này để trang đọc tra thẳng ra đoạn nguồn (§13.4).
+    """
+    cited = sorted({cite for block in blocks for cite in (block.get("cites") or [])})
+    if not cited:
+        return {}
+    rows = db.all(
+        "SELECT id, evidence FROM knowledge_units WHERE job_id = %s AND id = ANY(%s::text[])",
+        (job_id, cited),
+    )
+    return {
+        row["id"]: [item["pid"] for item in (row["evidence"] or []) if item.get("pid")]
+        for row in rows
+        if any(item.get("pid") for item in (row["evidence"] or []))
+    }
 
 
 # ------------------------------------------------------------------ xuất tệp

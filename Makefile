@@ -12,8 +12,8 @@ install:
 	$(PY) -m pip install -e ".[dev]"
 
 lint:
-	$(PY) -m ruff check apps tests eval
-	$(PY) -m ruff format --check apps tests eval
+	$(PY) -m ruff check apps tests eval tools
+	$(PY) -m ruff format --check apps tests eval tools
 
 test:
 	$(PY) -m pytest tests

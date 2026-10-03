@@ -8,7 +8,8 @@ hỏng, quên nối một trang) sẽ lọt ra tới trình duyệt. Bộ test n
 * không có import trần/URL ngoài (SPA không được kéo thư viện từ CDN — vừa phá quyền riêng tư vừa
   làm hỏng trang khi mạng chặn);
 * các trang mà M2 yêu cầu phải tồn tại trong bảng định tuyến;
-* API phải thắng tệp tĩnh: `/api/v1/…` không bị `index.html` nuốt mất.
+* API phải thắng tệp tĩnh: `/api/v1/…` không bị `index.html` nuốt mất;
+* các bộ test hàm thuần bằng Node trong tests/js phải chạy và đạt.
 """
 
 from __future__ import annotations
@@ -73,6 +74,21 @@ def test_dynamic_run_once_imports_also_resolve():
     for path in JS_FILES:
         for target in pattern.findall(path.read_text(encoding="utf-8")):
             assert (path.parent / target).resolve().is_file(), f"{path.name}: {target}"
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="cần Node để chạy test JS (chỉ là công cụ kiểm tra)")
+@pytest.mark.parametrize("name", ["md_test.mjs", "cites_test.mjs"])
+def test_node_suites_pass(name: str):
+    """Chạy bộ test hàm thuần của SPA (trích dẫn, markdown) — SPA không có bước build nên phải có test thật."""
+    script = ROOT / "tests" / "js" / name
+    assert script.is_file(), f"thiếu {script}"
+    result = subprocess.run(  # noqa: S603 - tham số cố định, không có đầu vào người dùng
+        ["node", str(script)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, f"{name} hỏng:\n{result.stdout[-400:]}\n{result.stderr[-400:]}"
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="cần Node để kiểm cú pháp (chỉ là công cụ kiểm tra)")

@@ -180,6 +180,17 @@ def test_end_to_end_job_runs_to_report(client, db):
     assert report["sections"][0]["blocks"], "phải có khối nội dung"
     assert client.get("/api/v1/reports").json()["items"]
 
+    # Trích dẫn trong khối là id đơn vị tri thức (`U-0001`); API phải trả kèm bản đồ ra `pid` đoạn nguồn,
+    # nếu không trang đọc không mở được phần "nguyên văn nguồn" (§6.8, §13.4).
+    cites = [cite for section in report["sections"] for block in section["blocks"] for cite in (block["cites"] or [])]
+    assert cites, "khối nội dung phải có trích dẫn"
+    sources = report["unit_sources"]
+    assert set(sources) == set(cites), "mọi id đơn vị được trích dẫn phải tra được ra đoạn nguồn"
+    pids = sorted({pid for rows in sources.values() for pid in rows})
+    assert pids and all(pid.startswith("P") for pid in pids)
+    served = client.get(f"/api/v1/documents/{document['id']}/paragraphs?pids={','.join(pids)}")
+    assert {row["pid"] for row in served.json()["items"]} == set(pids)
+
     # Sự kiện: khớp schema + có đủ mốc chính.
     from visynth.prompts import default_schemas_dir
     from visynth.structured import SchemaStore

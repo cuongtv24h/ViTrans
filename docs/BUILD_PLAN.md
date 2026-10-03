@@ -238,6 +238,15 @@ Hỏi đáp có trích dẫn, đối chiếu nguồn song song, URL/YouTube, cô
 *Trạng thái chốt: 2026-10-03, commit `d76eab3`. Mỗi việc ghi rõ **xong khi nào** để không có chuyện
 "đã làm gần xong". Việc nào không cần VPS/khoá thật thì nằm ở nhóm A và làm được ngay.*
 
+**Đã có đường chạy ngay (2026-10-03):** `tools/dev.py` dựng PostgreSQL nhúng (`pgserver`) + dữ liệu mẫu +
+API + worker trong một lệnh (`up`), chạy trọn luồng qua HTTP (`flow`, 13 bước) và nhập khoá thật khi cần
+(`keys`); không có khoá thì worker chạy chế độ giả nên **kiểm được đường ống mà không tốn token**. Nhân
+dịp này vá một lỗi đầu-cuối thật của M2: trích dẫn trong khối là **id đơn vị tri thức** (`U-0001`) nhưng
+trang đọc gửi thẳng vào `/documents/{id}/paragraphs?pids=` nên **mọi trích dẫn đều không mở được đoạn
+nguồn**; nay API trả kèm `unit_sources` (đơn vị → `pid`), SPA đánh số trích dẫn `[1]` theo §13.4 và tra
+đúng đoạn nguồn. Khoá lại bằng `test_end_to_end_job_runs_to_report` và `tests/js/cites_test.mjs`.
+Các việc dưới đây vẫn nguyên.
+
 ### A. Làm được ngay trong sandbox (không cần VPS, không cần khoá thật)
 
 | # | Việc | Vì sao còn thiếu | Xong khi |

@@ -6,6 +6,7 @@
 // tin lời AI, họ đọc được nguyên văn câu nguồn mà khối đó dựa vào.
 
 import { ApiError, download, get, post } from "../lib/api.js";
+import { citeNumbers, citeTexts, sourcePids } from "../lib/cites.js";
 import { markdownToHtml, splitTranslation } from "../lib/md.js";
 import { FLAG_REASONS, LEVELS, h, mount, toast, usd, when, words } from "../lib/ui.js";
 
@@ -14,30 +15,31 @@ export async function render(root, { id }) {
   const view = h("div", {});
   const cache = new Map();
 
-  /** Nguyên văn đoạn nguồn theo `pid` — tải một lần cho cả trang, dùng lại cho mọi trích dẫn. */
+  /** Nguyên văn đoạn nguồn, tải một lần cho cả trang rồi dùng lại cho mọi trích dẫn. */
   async function sourceParagraphs() {
     if (cache.has("source")) return cache.get("source");
-    const pids = new Set();
-    for (const section of report.sections || []) {
-      for (const block of section.blocks || []) for (const cite of block.cites || []) pids.add(cite);
-    }
-    const map = new Map();
-    if (pids.size) {
-      const query = [...pids].slice(0, 200).join(",");
+    const pids = sourcePids(report);
+    const paragraphs = new Map();
+    if (pids.length) {
+      const query = pids.slice(0, 200).join(",");
       const data = await get(`/documents/${report.document_id}/paragraphs?pids=${encodeURIComponent(query)}`).catch(() => ({ items: [] }));
-      for (const item of data.items || []) map.set(item.pid, item.content);
+      for (const item of data.items || []) paragraphs.set(item.pid, item.content);
     }
+    const map = citeTexts(report, paragraphs);
     cache.set("source", map);
     return map;
   }
 
+  const numbers = citeNumbers(report);
+
   function citationChip(cite, sourceBlock) {
+    const number = numbers.get(cite) || 1;
     return h(
       "button",
       {
         class: "cite",
         type: "button",
-        title: `Xem đoạn nguồn ${cite}`,
+        title: `Xem đoạn nguồn của trích dẫn [${number}]`,
         on: {
           click: async () => {
             sourceBlock.replaceChildren(h("p", { class: "busy" }, "Đang mở đoạn nguồn…"));
@@ -51,7 +53,7 @@ export async function render(root, { id }) {
                 h(
                   "div",
                   { class: "row between" },
-                  h("strong", {}, `Nguyên văn nguồn ${cite}`),
+                  h("strong", {}, `Nguyên văn nguồn [${number}]`),
                   h("button", { class: "link", on: { click: () => sourceBlock.replaceChildren() } }, "Đóng"),
                 ),
                 h("p", {}, text || "Không tìm thấy đoạn này (tài liệu có thể đã bị xoá theo hạn lưu)."),
@@ -60,7 +62,7 @@ export async function render(root, { id }) {
           },
         },
       },
-      cite,
+      `[${number}]`,
     );
   }
 
