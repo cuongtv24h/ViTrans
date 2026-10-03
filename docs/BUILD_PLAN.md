@@ -175,6 +175,15 @@ Wizard 3 bước (kèm chế độ riêng tư và đồng ý), cổng glossary, 
 
 Giới hạn tốc độ, bảo mật máy chủ (§20.4), quan sát và cảnh báo, trang pháp lý, diễn tập sự cố (hết hạn mức, khoá bị từ chối, nhà cung cấp sập, VPS chết).
 
+Tiến độ (làm trong sandbox; phần cần VPS/token thật để lại):
+
+- [x] Giới hạn tốc độ (§20.4.1): bộ đếm trong PostgreSQL dùng chung mọi tiến trình, chủ thể băm (không lưu IP/email thô), 429 `rate_limited` + `Retry-After`; hạn mức theo tuyến và theo tài khoản cho `/auth/login`; `rate_limit_gc` gọi trong `ops reap`; SPA đọc `retry_after_s` để hiện đếm ngược.
+- [x] Header bảo mật ở tầng ứng dụng (`visynth_api/headers.py`) song song Caddy: CSP, nosniff, frame-deny, referrer, HSTS khi có TLS.
+- [ ] Quan sát và cảnh báo: mở rộng `/healthz` + ngưỡng cảnh báo (hạn mức, cầu dao, hàng đợi tắc).
+- [ ] Bốn kịch bản diễn tập sự cố viết thành test chạy được (hết hạn mức, khoá bị từ chối, nhà cung cấp sập, VPS chết).
+- [ ] Trang pháp lý (ToS/privacy) và phần §14.5 còn lại — chờ nội dung pháp lý thật.
+- [ ] 20–30 người dùng mã mời, KPI §2.2 trên job thật — cần VPS.
+
 **Thoát mốc:** checklist §14.5 (phần cổng A) đạt; KPI §2.2 trên job thật; 20–30 người dùng mã mời.
 
 ### M4 — Mở rộng (1–2 tuần) → **cổng B**

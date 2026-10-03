@@ -1749,11 +1749,20 @@ components:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
     TooManyRequests:
-      description: Vượt giới hạn tốc độ
+      description: >-
+        Vượt giới hạn tốc độ (code=rate_limited) hoặc nhóm khoá của pool tạm hết hạn mức (code=quota_exhausted).
+        Hạn mức theo tuyến và cách đếm: SPEC §20.4.1. Bộ đếm dùng chung cho mọi tiến trình API nên con số
+        không bị chia nhỏ khi chạy nhiều worker.
       headers:
         Retry-After:
           schema: {type: integer}
-          description: Số giây nên chờ
+          description: Số giây nên chờ trước khi gọi lại
+        X-RateLimit-Limit:
+          schema: {type: integer}
+          description: Hạn mức của cửa sổ hiện tại (0 = đang tắt hạn mức)
+        X-RateLimit-Window:
+          schema: {type: integer}
+          description: Độ dài cửa sổ tính bằng giây
       content:
         application/problem+json:
           schema: {$ref: '#/components/schemas/Problem'}
@@ -1776,6 +1785,15 @@ components:
             properties:
               field: {type: string}
               message: {type: string}
+        retry_after_s:
+          type: integer
+          description: 'Chỉ có khi code=rate_limited: số giây nên chờ trước khi gọi lại'
+        limit:
+          type: integer
+          description: 'Chỉ có khi code=rate_limited: hạn mức của cửa sổ này'
+        window:
+          type: string
+          description: 'Chỉ có khi code=rate_limited: cửa sổ hạn mức, ví dụ "1 phút", "1 giờ"'
     Level:
       type: string
       enum: [full_translation, detailed_synthesis, deep_synthesis, executive_brief]

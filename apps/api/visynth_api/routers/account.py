@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Request, Response
 
 from visynth_api.db import Database
 from visynth_api.errors import Problem, sql_problem
+from visynth_api.limits import account_login_rule, login_subject
 from visynth_api.models import ConsentsIn, LoginIn, RedeemIn, RegisterIn
 from visynth_api.security import (
     clear_session_cookie,
@@ -115,6 +116,15 @@ def register(body: RegisterIn, request: Request, response: Response) -> dict:
 @router.post("/auth/login")
 def login(body: LoginIn, request: Request, response: Response) -> dict:
     db, settings = _db(request), _settings(request)
+    # Hạn mức theo IP đã chặn ở middleware; đây là hạn mức theo TÀI KHOẢN — cần thiết vì kẻ dò mật
+    # khẩu có thể đổi IP liên tục, nhưng không thể đổi email mục tiêu.
+    rate_limiter = getattr(request.app.state, "rate_limiter", None)
+    if rate_limiter is not None:
+        rate_limiter.enforce(
+            account_login_rule(settings),
+            login_subject(body.email),
+            message="quá nhiều lần thử đăng nhập cho tài khoản này; thử lại sau ít phút",
+        )
     row = db.one(
         """SELECT u.id, u.status, c.password_hash
              FROM users u LEFT JOIN local_credentials c ON c.user_id = u.id

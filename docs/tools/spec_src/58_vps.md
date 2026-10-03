@@ -52,6 +52,38 @@
 | Ứng dụng | Làm sạch Markdown, CSP, giới hạn tốc độ, 2FA cho Admin (§14.2) |
 | Nhật ký | Xoay vòng; không chứa nội dung tài liệu; che các chuỗi giống khoá API (`AIza...`, `nvapi-...`, `sk-...`) ở lớp logger |
 
+#### 20.4.1 Hạn mức tốc độ (M3 — đã triển khai)
+
+Yêu cầu: mọi tuyến **tốn tiền hoặc đoán được bí mật** phải có hạn mức; hạn mức phải dùng chung cho mọi
+tiến trình API (bộ đếm trong RAM bị chia nhỏ khi `uvicorn` chạy nhiều worker, coi như không có).
+
+| Phạm vi | Hạn mức mặc định | Cửa sổ | Đếm theo |
+|---|---|---|---|
+| `/auth/login` | 10 | 1 phút | danh tính (IP khi chưa đăng nhập) |
+| `/auth/login` (theo tài khoản) | 20 | 15 phút | **email** — chặn dò mật khẩu đổi IP liên tục |
+| `/auth/register` | 5 | 1 giờ | danh tính |
+| `/invites/redeem` | 10 | 1 giờ | danh tính |
+| `POST /takedown` | 5 | 1 giờ | danh tính |
+| `POST /documents` (tải lên) | 30 | 1 giờ | danh tính |
+| `POST /jobs`, `/jobs/estimate` | 20 và 60 | 1 giờ | danh tính |
+| `POST /jobs/{id}/glossary/confirm` | 60 | 1 giờ | danh tính |
+| Toàn bộ `/api/v1` (trần thô, chống quét) | 300 | 1 phút | danh tính |
+
+Quy tắc kèm theo:
+
+- **Không lưu IP thô hay email**: chủ thể đếm được băm `sha256(muối + giá trị)` trước khi ghi CSDL; muối
+  lấy từ `VISYNTH_RATE_LIMIT_SALT`, thiếu thì suy ra từ `VISYNTH_SESSION_SECRET` (§14.2 — tối thiểu hoá dữ liệu).
+- **Hợp đồng khi vượt hạn mức**: `429` + `application/problem+json` với `code = "rate_limited"`,
+  `retry_after_s`, `limit`, `window`, kèm header `Retry-After` và `X-RateLimit-Limit` — SPA hiện đếm ngược thay vì báo lỗi chung.
+- **`/api/v1/healthz` không bao giờ bị hạn mức**: giám sát ngoài máy gọi định kỳ, chặn nó là tự tạo báo động giả.
+- **CSDL lỗi ⇒ cho qua (fail-open)** và ghi log: khi CSDL đã hỏng thì chặn thêm người dùng thật không tăng an toàn.
+- Dọn bộ đếm bằng `rate_limit_gc('1 hour')`, gọi trong `visynth ops reap` (cron hằng ngày).
+- Máy phát triển tắt bằng `VISYNTH_RATE_LIMIT_*=0`; **giá trị mặc định của mã là giá trị chạy thật**, để quên
+  đặt biến môi trường thì hệ thống vẫn được bảo vệ.
+- Header bảo mật (`CSP`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, HSTS khi có TLS) đặt ở
+  **cả hai tầng**: `infra/Caddyfile` và middleware của API (`visynth_api/headers.py`) — phòng thủ nhiều lớp,
+  Caddy hỏng thì trình duyệt vẫn nhận chỉ dẫn an toàn.
+
 ### 20.5 Bí mật và khoá của pool
 
 - **`POOL_MASTER_KEY`** (32 byte ngẫu nhiên) nằm trong tệp chỉ root đọc được (`0400`) hoặc Docker secret, và có một bản ở nơi tách biệt (trình quản lý mật khẩu của bạn). **Không** nằm trong bản sao lưu CSDL, **không** nằm trong kho mã.

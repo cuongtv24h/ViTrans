@@ -17,6 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from visynth_api import __version__
 from visynth_api.db import Database
 from visynth_api.errors import Problem, problem_handler
+from visynth_api.headers import SecurityHeadersMiddleware
+from visynth_api.limits import RateLimiter, RateLimitMiddleware
 from visynth_api.routers import account, admin, catalog, curation, documents, glossaries, jobs, pool_admin, reports
 from visynth_api.settings import Settings, load_settings
 
@@ -38,6 +40,8 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
     )
     app.state.settings = settings
     app.state.db = db if db is not None else Database(settings.db_dsn)
+    # Giới hạn tốc độ (M3): bộ đếm nằm trong CSDL nên nhiều tiến trình API dùng chung một hạn mức.
+    app.state.rate_limiter = RateLimiter(app.state.db, salt=settings.rate_limit_salt or settings.session_secret)
 
     app.add_exception_handler(Problem, problem_handler)
     app.add_exception_handler(Exception, _unhandled)
@@ -58,6 +62,15 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
                 ],
             },
             media_type="application/problem+json",
+        )
+
+    # Thứ tự middleware: cái thêm SAU nằm NGOÀI, nên header bảo mật cũng phủ cả câu trả lời 429.
+    # Giới hạn tốc độ đứng trước phần xử lý tuyến để không tốn công parse thân yêu cầu khi đã bị chặn.
+    app.add_middleware(RateLimitMiddleware, settings=settings)
+    if settings.security_headers:
+        app.add_middleware(
+            SecurityHeadersMiddleware,
+            hsts_max_age_s=settings.hsts_max_age_s if settings.cookie_secure else 0,
         )
 
     for module in (account, documents, jobs, glossaries, reports, catalog, admin, curation, pool_admin):

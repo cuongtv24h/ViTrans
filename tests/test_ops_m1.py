@@ -89,7 +89,7 @@ def test_reap_returns_orphan_task_to_queue_and_frees_lease(dsn, db):
     )
 
     preview = ops.reap(dsn, dry_run=True)
-    assert preview == {"tasks": 2, "leases": 1, "applied": 0}
+    assert preview == {"tasks": 2, "leases": 1, "rate_limit_rows": 0, "applied": 0}
     assert db.scalar("SELECT count(*) FROM job_tasks WHERE status = 'pending'") == 0, "xem trước không ghi gì"
 
     result = ops.reap(dsn, now=0.0)
@@ -99,7 +99,7 @@ def test_reap_returns_orphan_task_to_queue_and_frees_lease(dsn, db):
     assert db.scalar("SELECT count(*) FROM llm_leases") == 0
 
     # Chạy lại không còn gì để thu hồi (idempotent)
-    assert ops.reap(dsn, now=0.0) == {"tasks": 0, "leases": 0, "applied": 1}
+    assert ops.reap(dsn, now=0.0) == {"tasks": 0, "leases": 0, "rate_limit_rows": 0, "applied": 1}
 
 
 def test_purge_only_removes_expired_content(dsn, db):

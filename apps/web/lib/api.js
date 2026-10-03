@@ -11,11 +11,22 @@ const BASE = "/api/v1";
 export class ApiError extends Error {
   constructor(status, body) {
     const detail = body && (body.detail || body.message);
-    super(detail || `Lỗi ${status}`);
+    // 429 là lỗi DUY NHẤT người dùng tự sửa được bằng cách chờ: nói rõ chờ bao lâu, nếu không họ sẽ
+    // bấm lại liên tục và tự khoá mình lâu hơn. Gắn ngay vào `message` để mọi chỗ `toast(error.message)`
+    // đều hiển thị đúng mà không phải sửa từng màn hình.
+    const retryAfterS = Number((body && body.retry_after_s) || 0);
+    const hint = retryAfterS > 0 ? ` (thử lại sau ${Math.ceil(retryAfterS)} giây)` : "";
+    super((detail || `Lỗi ${status}`) + hint);
     this.name = "ApiError";
     this.status = status;
     this.code = (body && body.code) || "error";
+    this.retryAfterS = retryAfterS;
     this.body = body || {};
+  }
+
+  /** Chờ hết hạn mức rồi tự gọi lại — dùng cho nút người dùng chủ động bấm lại (không tự động nền). */
+  get waitMs() {
+    return Math.max(0, Math.ceil(this.retryAfterS * 1000));
   }
 }
 

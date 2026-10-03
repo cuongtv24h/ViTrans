@@ -1332,6 +1332,51 @@ BEGIN
 END $$;
 CREATE TRIGGER style_core_versions_guard BEFORE UPDATE OR DELETE ON style_core_versions FOR EACH ROW EXECUTE FUNCTION style_core_version_guard();
 
+-- -------------------------------------------------------------------------------------
+-- Giới hạn tốc độ (M3, §20.4): bộ đếm cửa sổ cố định dùng chung cho mọi tiến trình API.
+-- Chỉ lưu KHOÁ BĂM của danh tính (không lưu IP thô): chống dò mật khẩu mà không lưu địa chỉ mạng.
+-- -------------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rate_limit_hits (
+  scope        text NOT NULL,
+  subject      text NOT NULL,
+  window_start timestamptz NOT NULL,
+  hits         integer NOT NULL DEFAULT 0,
+  PRIMARY KEY (scope, subject, window_start)
+);
+CREATE INDEX IF NOT EXISTS rate_limit_window_idx ON rate_limit_hits (window_start);
+
+CREATE FUNCTION rate_limit_hit(
+  p_scope text, p_subject text, p_limit integer, p_window_s integer
+) RETURNS TABLE(allowed boolean, hits integer, remaining integer, retry_after_s integer)
+LANGUAGE plpgsql AS $$
+DECLARE
+  v_start timestamptz;
+  v_hits integer;
+  v_retry integer;
+BEGIN
+  IF p_limit <= 0 OR p_window_s <= 0 THEN
+    RETURN QUERY SELECT true, 0, 0, 0;
+    RETURN;
+  END IF;
+  v_start := to_timestamp(floor(extract(epoch FROM now()) / p_window_s) * p_window_s);
+  v_retry := GREATEST(1, CEIL(p_window_s - (extract(epoch FROM now()) - extract(epoch FROM v_start))))::integer;
+  INSERT INTO rate_limit_hits (scope, subject, window_start, hits)
+       VALUES (p_scope, p_subject, v_start, 1)
+  ON CONFLICT (scope, subject, window_start)
+    DO UPDATE SET hits = rate_limit_hits.hits + 1
+    RETURNING rate_limit_hits.hits INTO v_hits;
+  RETURN QUERY SELECT v_hits <= p_limit, v_hits, GREATEST(0, p_limit - v_hits), v_retry;
+END $$;
+
+CREATE FUNCTION rate_limit_gc(p_keep interval DEFAULT '1 hour')
+RETURNS integer LANGUAGE plpgsql AS $$
+DECLARE v_deleted integer;
+BEGIN
+  DELETE FROM rate_limit_hits WHERE window_start < now() - p_keep;
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END $$;
+
 -- =====================================================================================
 -- (Tuỳ chọn) Row-Level Security như lớp phòng thủ thứ hai, nếu dùng role riêng cho API:
 --   ALTER TABLE documents ENABLE ROW LEVEL SECURITY;

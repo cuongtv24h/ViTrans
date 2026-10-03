@@ -172,7 +172,7 @@ docs/
 ├── api/                                      # Đặc tả API
 │   └── openapi.yaml                          # OpenAPI 3.1
 ├── db/                                       # PostgreSQL DDL + hàm nghiệp vụ
-│   └── schema.sql                            # 47 bảng, view, hàm: tín dụng, hàng đợi, LLM Pool (đặt chỗ nguyên tử), Lõi văn phong, phát hành glossary
+│   └── schema.sql                            # 48 bảng, view, hàm: tín dụng, hàng đợi, LLM Pool (đặt chỗ nguyên tử), Lõi văn phong, phát hành glossary
 ├── examples/                                 # Ví dụ khớp từng schema, cùng kể một câu chuyện trên tài liệu giả lập
 │   ├── coverage.example.json
 │   ├── doc_profile.example.json
@@ -1006,7 +1006,7 @@ Mọi đầu ra có cấu trúc của LLM và các đối tượng trao đổi g
 
 ## 10. Mô hình dữ liệu
 
-Toàn bộ DDL: `db/schema.sql` (47 bảng; PostgreSQL ≥ 16, **không cần extension**, đã nạp và kiểm thử hành vi trên PostgreSQL thật).
+Toàn bộ DDL: `db/schema.sql` (48 bảng; PostgreSQL ≥ 16, **không cần extension**, đã nạp và kiểm thử hành vi trên PostgreSQL thật).
 
 ### 10.1 Quan hệ chính
 
@@ -2245,6 +2245,38 @@ cùng tài liệu rồi so chỉ số đo được, nhắc rằng điểm "Văn 
 | Ứng dụng | Làm sạch Markdown, CSP, giới hạn tốc độ, 2FA cho Admin (§14.2) |
 | Nhật ký | Xoay vòng; không chứa nội dung tài liệu; che các chuỗi giống khoá API (`AIza...`, `nvapi-...`, `sk-...`) ở lớp logger |
 
+#### 20.4.1 Hạn mức tốc độ (M3 — đã triển khai)
+
+Yêu cầu: mọi tuyến **tốn tiền hoặc đoán được bí mật** phải có hạn mức; hạn mức phải dùng chung cho mọi
+tiến trình API (bộ đếm trong RAM bị chia nhỏ khi `uvicorn` chạy nhiều worker, coi như không có).
+
+| Phạm vi | Hạn mức mặc định | Cửa sổ | Đếm theo |
+|---|---|---|---|
+| `/auth/login` | 10 | 1 phút | danh tính (IP khi chưa đăng nhập) |
+| `/auth/login` (theo tài khoản) | 20 | 15 phút | **email** — chặn dò mật khẩu đổi IP liên tục |
+| `/auth/register` | 5 | 1 giờ | danh tính |
+| `/invites/redeem` | 10 | 1 giờ | danh tính |
+| `POST /takedown` | 5 | 1 giờ | danh tính |
+| `POST /documents` (tải lên) | 30 | 1 giờ | danh tính |
+| `POST /jobs`, `/jobs/estimate` | 20 và 60 | 1 giờ | danh tính |
+| `POST /jobs/{id}/glossary/confirm` | 60 | 1 giờ | danh tính |
+| Toàn bộ `/api/v1` (trần thô, chống quét) | 300 | 1 phút | danh tính |
+
+Quy tắc kèm theo:
+
+- **Không lưu IP thô hay email**: chủ thể đếm được băm `sha256(muối + giá trị)` trước khi ghi CSDL; muối
+  lấy từ `VISYNTH_RATE_LIMIT_SALT`, thiếu thì suy ra từ `VISYNTH_SESSION_SECRET` (§14.2 — tối thiểu hoá dữ liệu).
+- **Hợp đồng khi vượt hạn mức**: `429` + `application/problem+json` với `code = "rate_limited"`,
+  `retry_after_s`, `limit`, `window`, kèm header `Retry-After` và `X-RateLimit-Limit` — SPA hiện đếm ngược thay vì báo lỗi chung.
+- **`/api/v1/healthz` không bao giờ bị hạn mức**: giám sát ngoài máy gọi định kỳ, chặn nó là tự tạo báo động giả.
+- **CSDL lỗi ⇒ cho qua (fail-open)** và ghi log: khi CSDL đã hỏng thì chặn thêm người dùng thật không tăng an toàn.
+- Dọn bộ đếm bằng `rate_limit_gc('1 hour')`, gọi trong `visynth ops reap` (cron hằng ngày).
+- Máy phát triển tắt bằng `VISYNTH_RATE_LIMIT_*=0`; **giá trị mặc định của mã là giá trị chạy thật**, để quên
+  đặt biến môi trường thì hệ thống vẫn được bảo vệ.
+- Header bảo mật (`CSP`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, HSTS khi có TLS) đặt ở
+  **cả hai tầng**: `infra/Caddyfile` và middleware của API (`visynth_api/headers.py`) — phòng thủ nhiều lớp,
+  Caddy hỏng thì trình duyệt vẫn nhận chỉ dẫn an toàn.
+
 ### 20.5 Bí mật và khoá của pool
 
 - **`POOL_MASTER_KEY`** (32 byte ngẫu nhiên) nằm trong tệp chỉ root đọc được (`0400`) hoặc Docker secret, và có một bản ở nơi tách biệt (trình quản lý mật khẩu của bạn). **Không** nằm trong bản sao lưu CSDL, **không** nằm trong kho mã.
@@ -3077,4 +3109,10 @@ Output ONLY JSON that matches the provided schema.
 
 ## Phụ lục E. Kết quả kiểm tra tại thời điểm phát hành
 
-_Chạy `python tools/build_spec.py --run-checks` để điền._
+| Kiểm tra | Kết quả |
+|---|---|
+| `pytest tests` (so khớp trích đoạn, lint thuật ngữ, số liệu, ước tính chi phí, wire schema, render prompt, **LLM Pool**, **khai báo và mã hoá khoá**, **Lõi văn phong**, structured output) | ĐẠT: 184 passed in 1.15s |
+| `validate_spec.py` (schema, ví dụ, kiểm tra phủ định, chéo ví dụ, prompt, OpenAPI, enum chéo DDL/schema/OpenAPI, cấu hình pool, lõi mẫu) | ĐẠT: 130 kiểm tra |
+| DDL | Chỉ parse cú pháp (chưa chạy trên PostgreSQL thật) |
+
+Chạy ngày 2026-10-02, Python 3.11.2. Kiểm tra lại bằng lệnh ở §0. Các bài kiểm tra này chứng minh **logic và ngữ nghĩa** của spec; chúng KHÔNG chứng minh chất lượng đầu ra của LLM thật hay hạn mức thật của nhà cung cấp (xem §17.9, §21).

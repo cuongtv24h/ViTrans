@@ -5,6 +5,7 @@
 // đối chiếu nguồn) phải có test thật chạy được, không chỉ là "mắt thấy đúng".
 
 import assert from "node:assert/strict";
+import { ApiError } from "../../apps/web/lib/api.js";
 import { splitTranslation, markdownToHtml, excerpt, SOURCE_ANCHOR } from "../../apps/web/lib/md.js";
 
 // 1) Tách bản dịch theo neo nguồn: mỗi đoạn phải gắn ĐÚNG pid của nó
@@ -55,5 +56,15 @@ assert.ok(!dangerous.includes("<a href"), "liên kết ngoài bị bỏ vỏ, ch
 const shortened = excerpt("một hai ba bốn năm sáu bảy tám chín mười", 18);
 assert.ok(shortened.endsWith("…") && !shortened.includes("  "), `cắt gọn: ${shortened}`);
 assert.equal(excerpt("ngắn", 40), "ngắn");
+
+// 5) 429 (giới hạn tốc độ, M3) phải nói rõ phải chờ bao lâu — nếu không người dùng bấm lại liên tục
+//    và tự khoá mình lâu hơn.
+const limited = new ApiError(429, { detail: "quá nhiều yêu cầu", code: "rate_limited", retry_after_s: 42.4 });
+assert.equal(limited.code, "rate_limited");
+assert.ok(limited.message.includes("43 giây"), `có đếm ngược: ${limited.message}`);
+assert.equal(limited.waitMs, 42400);
+const plain = new ApiError(500, { detail: "lỗi máy chủ" });
+assert.equal(plain.message, "lỗi máy chủ", "lỗi khác không bị thêm chữ thừa");
+assert.equal(plain.waitMs, 0);
 
 console.log("md_test: tất cả đạt");

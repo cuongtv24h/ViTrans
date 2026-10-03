@@ -27,7 +27,7 @@ def _connect(dsn: str) -> psycopg.Connection:
 
 
 def reap(dsn: str, *, stale: str = "3 minutes", now: float | None = None, dry_run: bool = False) -> dict[str, int]:
-    """Thu hồi task mồ côi và chỗ đặt hết hạn. Trả `{tasks, leases}`."""
+    """Thu hồi task mồ côi, chỗ đặt hết hạn và dọn bộ đếm giới hạn tốc độ. Trả `{tasks, leases, rate_limit_rows}`."""
     moment = time.time() if now is None else float(now)
     with _connect(dsn) as conn, conn.cursor() as cur:
         if dry_run:
@@ -37,12 +37,16 @@ def reap(dsn: str, *, stale: str = "3 minutes", now: float | None = None, dry_ru
             )
             tasks = int(cur.fetchone()["n"])
             cur.execute("SELECT count(*) AS n FROM llm_leases WHERE expires_at < %s", (moment,))
-            return {"tasks": tasks, "leases": int(cur.fetchone()["n"]), "applied": 0}
+            leases = int(cur.fetchone()["n"])
+            cur.execute("SELECT count(*) AS n FROM rate_limit_hits WHERE window_start < now() - '1 hour'::interval")
+            return {"tasks": tasks, "leases": leases, "rate_limit_rows": int(cur.fetchone()["n"]), "applied": 0}
         cur.execute("SELECT reclaim_stale_tasks(%s::interval) AS n", (stale,))
         tasks = int(cur.fetchone()["n"])
         cur.execute("SELECT pool_reap_leases(%s) AS n", (moment,))
         leases = int(cur.fetchone()["n"])
-    return {"tasks": tasks, "leases": leases, "applied": 1}
+        cur.execute("SELECT rate_limit_gc('1 hour') AS n")
+        rate_rows = int(cur.fetchone()["n"])
+    return {"tasks": tasks, "leases": leases, "rate_limit_rows": rate_rows, "applied": 1}
 
 
 def purge(dsn: str, *, dry_run: bool = False) -> dict[str, int]:
