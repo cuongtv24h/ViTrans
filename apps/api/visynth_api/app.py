@@ -7,10 +7,12 @@ Kiểm thử:   `create_app(settings, db)` để tiêm cấu hình và kết n�
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from visynth_api import __version__
 from visynth_api.db import Database
@@ -74,6 +76,15 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
         except Exception as exc:  # pragma: no cover - chỉ xảy ra khi CSDL chết
             log.warning("healthz không kết nối được CSDL: %s", exc)
             return {"status": "degraded", "version": __version__, "db": {"error": type(exc).__name__}}
+
+    # SPA không bước build (M2) phục vụ ngay từ API khi chạy một tiến trình: cùng gốc nên cookie phiên
+    # hoạt động, không CORS, và SSE không đi qua hai tầng proxy. Trên VPS, Caddy vẫn là cổng duy nhất.
+    # Gắn SAU CÙNG: mount ở "/" sẽ nuốt mọi đường dẫn chưa khớp, nên mọi tuyến API phải đăng ký trước.
+    web_dir = Path(settings.web_dir) if settings.web_dir else None
+    if web_dir and (web_dir / "index.html").is_file():
+        app.mount("/", StaticFiles(directory=str(web_dir), html=True), name="web")
+    else:
+        log.warning("không thấy SPA ở %s — chỉ chạy API", web_dir)
 
     return app
 

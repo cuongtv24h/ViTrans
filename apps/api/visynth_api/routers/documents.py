@@ -11,7 +11,7 @@ import uuid
 from pathlib import Path
 
 import psycopg
-from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile
 
 from visynth.extract import Extraction, ExtractionError, extract
 from visynth.extract.ocr import estimate_scanned_words
@@ -254,6 +254,37 @@ def get_document(document_id: str, request: Request, user: dict = Depends(curren
     if row is None:
         raise Problem(404, "not_found", "không có tài liệu này")
     return row
+
+
+@router.get("/documents/{document_id}/paragraphs")
+def document_paragraphs(
+    document_id: str,
+    request: Request,
+    pids: str | None = Query(default=None, description="danh sách `pid` cách nhau bằng dấu phẩy; trống = cả tài liệu"),
+    limit: int = Query(default=200, ge=1, le=1000),
+    user: dict = Depends(current_user),
+) -> dict:
+    """Đoạn nguồn theo `pid` — để trang đọc mở phần ĐỐI CHIẾU NGUỒN của từng trích dẫn (§6.8).
+
+    Chỉ chủ tài liệu đọc được; trả đúng thứ tự đọc (`idx`) và không kèm gì ngoài `pid`/`idx`/`page`.
+    """
+    db = _db(request)
+    row = db.one(
+        "SELECT id FROM documents WHERE id = %s AND user_id = %s AND deleted_at IS NULL",
+        (document_id, user["id"]),
+    )
+    if row is None:
+        raise Problem(404, "not_found", "không có tài liệu này")
+    wanted = [part.strip() for part in (pids or "").split(",") if part.strip()]
+    if len(wanted) > 200:
+        raise Problem(422, "too_many_pids", "mỗi lần chỉ tra được 200 đoạn")
+    items = db.all(
+        """SELECT pid, idx, kind, content, page_start, page_end FROM doc_paragraphs
+            WHERE document_id = %s AND (%s::text[] IS NULL OR pid = ANY(%s::text[]))
+            ORDER BY idx LIMIT %s""",
+        (document_id, wanted or None, wanted or None, limit),
+    )
+    return {"items": items, "document_id": document_id, "requested": len(wanted), "returned": len(items)}
 
 
 @router.delete("/documents/{document_id}", status_code=204)

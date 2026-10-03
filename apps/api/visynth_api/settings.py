@@ -50,12 +50,17 @@ class Settings:
     #: Trống = bóc tách ngay trong tiến trình API (chỉ dùng ở máy phát triển).
     parser_url: str = ""
     parser_timeout_s: float = 120.0
+    #: Thư mục SPA tĩnh (M2). `None` = tự tìm `apps/web` trong kho mã.
+    web_dir: Path | None = None
     #: Chỉ để chẩn đoán: khoá chủ được đọc từ tệp thay vì biến môi trường.
     pool_master_key_file_used: bool = False
 
     def __post_init__(self) -> None:
         if not self.parser_url:
             self.parser_url = os.environ.get("VISYNTH_PARSER_URL", "").rstrip("/")
+        if self.web_dir is None:
+            env_web = os.environ.get("VISYNTH_WEB_DIR")
+            self.web_dir = Path(env_web) if env_web else Path(__file__).resolve().parents[3] / "apps" / "web"
         if not self.db_dsn:
             self.db_dsn = os.environ.get("VISYNTH_DB_DSN", "")
         if not self.session_secret:

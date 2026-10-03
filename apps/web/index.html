@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <title>ViSynth — dịch tổng hợp tài liệu có kiểm chứng nguồn</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='24' font-size='24'%3E%E2%9C%A6%3C/text%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <!--
+      SPA KHÔNG có bước build (xem docs/BUILD_PLAN.md, mục "sai lệch có chủ ý"): ES modules + CSS thuần,
+      phục vụ tĩnh bởi FastAPI (dev) và Caddy (VPS). Nhờ vậy trên VPS không cần Node, không có bước
+      sinh mã, và cùng một tệp là thứ được kiểm trong test.
+    -->
+    <a class="skip" href="#main">Bỏ qua điều hướng</a>
+    <header class="topbar">
+      <a class="brand" href="#/">✦ ViSynth</a>
+      <nav id="nav" aria-label="Điều hướng chính"></nav>
+      <div id="who" class="who"></div>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <div id="view" class="view" aria-live="polite"></div>
+    </main>
+
+    <footer class="foot">
+      <p>
+        Nội dung do AI tổng hợp, có thể chứa sai sót — hãy đối chiếu nguồn cho các quyết định quan trọng.
+        <a href="#/phap-ly">Chính sách &amp; quyền riêng tư</a>
+      </p>
+    </footer>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

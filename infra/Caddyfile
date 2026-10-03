@@ -46,9 +46,10 @@
 		}
 	}
 
-	# Giao diện (M2): bật khi có service `web`. Trước đó, đường gốc trả về thông báo gọn.
+	# Giao diện SPA (M2, không bước build): `api` phục vụ tệp tĩnh từ `apps/web` trong image.
+	# Giữ cùng gốc với API nên cookie phiên HttpOnly tự đi kèm và không cần CORS (§14.2).
 	handle {
-		respond "ViSynth API đang chạy. Giao diện sẽ có ở mốc M2." 200
+		reverse_proxy api:8000
 	}
 
 	log {
