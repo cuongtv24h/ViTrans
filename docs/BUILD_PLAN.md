@@ -179,8 +179,8 @@ Tiến độ (làm trong sandbox; phần cần VPS/token thật để lại):
 
 - [x] Giới hạn tốc độ (§20.4.1): bộ đếm trong PostgreSQL dùng chung mọi tiến trình, chủ thể băm (không lưu IP/email thô), 429 `rate_limited` + `Retry-After`; hạn mức theo tuyến và theo tài khoản cho `/auth/login`; `rate_limit_gc` gọi trong `ops reap`; SPA đọc `retry_after_s` để hiện đếm ngược.
 - [x] Header bảo mật ở tầng ứng dụng (`visynth_api/headers.py`) song song Caddy: CSP, nosniff, frame-deny, referrer, HSTS khi có TLS.
-- [ ] Quan sát và cảnh báo: mở rộng `/healthz` + ngưỡng cảnh báo (hạn mức, cầu dao, hàng đợi tắc).
-- [ ] Bốn kịch bản diễn tập sự cố viết thành test chạy được (hết hạn mức, khoá bị từ chối, nhà cung cấp sập, VPS chết).
+- [x] Quan sát và cảnh báo: `/healthz` trả `ok|degraded|critical` + mã cảnh báo (`?detail=1` kèm số), `ops health` thoát mã 3 khi có việc, ngưỡng ở `visynth.worker.alerts` (đổi bằng `VISYNTH_ALERT_*`); thêm tín hiệu `deployments_open`, `rate_limit_blocks_1h`, `oldest_waiting_min`, `tasks_stale_running`.
+- [x] Bốn kịch bản diễn tập sự cố (`tests/test_drills_m3.py`) + sửa lỗi lộ ra khi diễn tập: trạng thái pool trên VPS nay ở CSDL (`DbPoolState` — trước đó cách ly khoá/cầu dao/cooldown chỉ nằm trong RAM); `DbLedger` không còn ném lỗi ra ngoài khi ghi sổ hỏng (đếm `failed` + log).
 - [ ] Trang pháp lý (ToS/privacy) và phần §14.5 còn lại — chờ nội dung pháp lý thật.
 - [ ] 20–30 người dùng mã mời, KPI §2.2 trên job thật — cần VPS.
 

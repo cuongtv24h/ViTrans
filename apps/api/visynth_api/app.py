@@ -77,18 +77,57 @@ def create_app(settings: Settings | None = None, db: Database | None = None) -> 
         app.include_router(module.router, prefix=API_PREFIX)
 
     @app.get(f"{API_PREFIX}/healthz", tags=["ops"])
-    def healthz() -> dict:
-        """Trạng thái sống + phiên bản lược đồ (dùng cho giám sát ngoài máy)."""
+    def healthz(detail: bool = False) -> dict:
+        """Trạng thái sống + phiên bản lược đồ (dùng cho giám sát ngoài máy).
+
+        Mặc định chỉ trả trạng thái và **mã** cảnh báo — đủ để giám sát reo, không lộ số liệu nội bộ.
+        `?detail=1` trả kèm con số và việc cần làm (dùng khi người vận hành mở trình duyệt).
+        """
+        from visynth.worker import alerts as alert_rules
+        from visynth.worker import ops
+
         try:
             db_conn: Database = app.state.db
-            return {
-                "status": "ok",
+            payload: dict = {
                 "version": __version__,
                 "db": {"schema_version": db_conn.schema_version(), "tables": db_conn.table_count()},
             }
+            # Cảnh báo tính từ số liệu vận hành thật; CSDL đọc được thì mới có số liệu để nói.
+            signal_keys = (
+                "tasks_pending",
+                "tasks_running",
+                "tasks_failed_1h",
+                "tasks_stale_running",
+                "jobs_active",
+                "jobs_waiting_30m",
+                "oldest_waiting_min",
+                "leases_expired",
+                "credentials_quarantined",
+                "deployments_open",
+                "users_negative_credits",
+                "rate_limit_blocks_1h",
+                "pool_incidents_1h",
+                "database_bytes",
+            )
+            try:
+                signals = {key: value for key, value in ops.health(settings.db_dsn).items() if key in signal_keys}
+            except Exception as exc:  # noqa: BLE001 - số liệu phụ, không được làm hỏng healthz
+                log.warning("healthz không đọc được số liệu vận hành: %s", exc)
+                signals = {}
+            found = alert_rules.evaluate(signals) if signals else []
+            payload["status"] = alert_rules.status(found) if signals else "ok"
+            payload["alerts"] = found if detail else [a["code"] for a in found]
+            if detail and signals:
+                payload["signals"] = signals
+            return payload
         except Exception as exc:  # pragma: no cover - chỉ xảy ra khi CSDL chết
             log.warning("healthz không kết nối được CSDL: %s", exc)
-            return {"status": "degraded", "version": __version__, "db": {"error": type(exc).__name__}}
+            return {
+                "status": "degraded",
+                "version": __version__,
+                "db": {"error": type(exc).__name__},
+                "alerts": ["db_unreachable"],
+            }
 
     # SPA không bước build (M2) phục vụ ngay từ API khi chạy một tiến trình: cùng gốc nên cookie phiên
     # hoạt động, không CORS, và SSE không đi qua hai tầng proxy. Trên VPS, Caddy vẫn là cổng duy nhất.

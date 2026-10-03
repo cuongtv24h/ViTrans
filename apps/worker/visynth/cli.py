@@ -1167,14 +1167,19 @@ def cmd_ops(args: argparse.Namespace) -> int:
             f"lỗi 1 giờ: {payload['tasks_failed_1h']} | chỗ đặt hết hạn: {payload['leases_expired']}"
             f" | khoá bị cách ly: {payload['credentials_quarantined']} | ví âm: {payload['users_negative_credits']}"
         )
-    # Mã thoát 3 = có dấu hiệu cần người xem (giám sát ngoài máy bắt được mà không phải đọc log)
+    # Mã thoát 3 = có dấu hiệu cần người xem (giám sát ngoài máy bắt được mà không phải đọc log).
+    # Ngưỡng nằm ở `visynth.worker.alerts` để một chỗ duy nhất quyết định "bao nhiêu là đáng lo".
     if args.ops_cmd == "health":
-        serious = (
-            payload["jobs_waiting_30m"] > 0
-            or payload["users_negative_credits"] > 0
-            or payload["credentials_quarantined"] > 0
-        )
-        return 3 if serious else 0
+        from visynth.worker import alerts as alert_rules
+
+        found = alert_rules.evaluate(payload)
+        if found:
+            print(f"cảnh báo: {alert_rules.summarize(found)}")
+            for item in found:
+                if item["severity"] != "info":
+                    print(f"  → {item['message']}: {item['action']}")
+            return alert_rules.ALERT_EXIT_CODE
+        return 0
     return 0
 
 

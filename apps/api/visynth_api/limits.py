@@ -95,7 +95,21 @@ class RateLimiter:
             return True, 0, 0
         if row is None:
             return True, 0, 0
-        return bool(row["allowed"]), int(row["hits"]), int(row["retry_after_s"])
+        allowed = bool(row["allowed"])
+        if not allowed:
+            self._note_block(rule, subject)
+        return allowed, int(row["hits"]), int(row["retry_after_s"])
+
+    def _note_block(self, rule: Rule, subject: str) -> None:
+        """Ghi lại một lần BỊ CHẶN để `ops health` phát hiện "đang bị dò" (cảnh báo §20.7).
+
+        Đây là ghi thêm trên đường đã bị chặn (hiếm), và hỏng thì bỏ qua — không để việc ghi số liệu
+        làm hỏng câu trả lời 429 mà người dùng đang chờ.
+        """
+        try:
+            self.db.one("SELECT * FROM rate_limit_hit(%s, %s, %s, %s)", (f"blocked:{rule.scope}", subject, 1, 3600))
+        except Exception as exc:  # noqa: BLE001 - số liệu là việc phụ
+            log.debug("không ghi được dấu vết chặn (%s): %s", rule.scope, exc)
 
     def enforce(self, rule: Rule, subject_value: str, *, message: str | None = None) -> None:
         allowed, hits, retry_after = self.check(rule, subject_value)

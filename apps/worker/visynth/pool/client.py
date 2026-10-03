@@ -106,6 +106,7 @@ class PooledLLMClient:
         clock: Callable[[], float] = time.time,
         sleep: Callable[[float], None] = time.sleep,
         ledger: Ledger | None = None,
+        state: object | None = None,
         gate: str = "dev",
         privacy: str = "standard",
         priority: str = "normal",
@@ -130,7 +131,7 @@ class PooledLLMClient:
         self.priority = priority
         self.region_restricted = region_restricted
         self.allow_metered = allow_metered
-        self.router = Router(model, seed=seed)
+        self.router = Router(model, state=state, seed=seed)
         self.max_attempts = max_attempts
         self.defer_after_s = defer_after_s
         self.max_wait_s = max_wait_s
@@ -172,6 +173,12 @@ class PooledLLMClient:
         refs = {c["id"]: c.get("secret_ref", "") for g in cfg.get("groups", []) for c in g.get("credentials", [])}
         if ledger is None:
             ledger = dbstore.DbLedger(db, user_id=user_id, stage=stage)
+        if kw.get("state") is None:
+            # Trạng thái pool ở CSDL: hạn mức/cooldown/cầu dao/khoá bị cách ly dùng CHUNG cho mọi tiến trình.
+            # Để trong RAM thì hai worker cùng tiêu một ngân sách RPM và `ops health` không thấy khoá chết (§20.7).
+            from visynth.pool.dbstate import DbPoolState
+
+            kw["state"] = DbPoolState(db)
         return cls(
             load_pool_model(cfg),
             providers,

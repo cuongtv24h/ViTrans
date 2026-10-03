@@ -83,6 +83,17 @@ def health(dsn: str) -> dict[str, Any]:
               (SELECT count(*) FROM llm_leases WHERE expires_at < extract(epoch FROM now()))     AS leases_expired,
               (SELECT count(*) FROM llm_credentials WHERE status = 'quarantined')               AS credentials_quarantined,
               (SELECT count(*) FROM v_credit_balance WHERE balance < 0)                        AS users_negative_credits,
+              (SELECT count(*) FROM llm_scope_state WHERE scope = 'deployment' AND circuit = 'open')     AS deployments_open,
+              (SELECT count(*) FROM llm_scope_state WHERE scope = 'deployment' AND circuit = 'half_open') AS deployments_half_open,
+              (SELECT count(*) FROM llm_incidents WHERE at > now() - interval '1 hour')          AS pool_incidents_1h,
+              (SELECT count(*) FROM job_tasks WHERE status = 'running'
+                 AND heartbeat_at < now() - interval '3 minutes')                              AS tasks_stale_running,
+              (SELECT coalesce(floor(extract(epoch FROM now() - min(created_at)) / 60), 0) FROM jobs
+                WHERE status = 'queued')                                                       AS oldest_waiting_min,
+              (SELECT coalesce(sum(hits), 0) FROM rate_limit_hits
+                WHERE scope LIKE 'blocked:%%' AND window_start > now() - interval '1 hour')    AS rate_limit_blocks_1h,
+              (SELECT count(DISTINCT subject) FROM rate_limit_hits
+                WHERE scope LIKE 'blocked:%%' AND window_start > now() - interval '1 hour')    AS rate_limit_subjects_1h,
               (SELECT coalesce(max(created_at), now()) FROM jobs)                               AS newest_job
             """
         )

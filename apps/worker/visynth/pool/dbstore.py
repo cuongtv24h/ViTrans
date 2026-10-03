@@ -21,12 +21,15 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 from typing import Any
 
 from visynth.pool import secrets as pool_secrets
 from visynth.pool.policy_io import DeclareResult, compile_all, merge_fragment
 from visynth.pool.registry import Registry
 from visynth.pool.validate import validate_config
+
+logger = logging.getLogger("visynth.pool.ledger")
 
 #: Khoá `app_settings` giữ phần `policy` của PoolConfig.
 #: Ghi chú mặc định cho bản xuất cấu hình (trường `note` bắt buộc theo schema).
@@ -997,6 +1000,9 @@ class DbLedger:
         self.stage = stage
         self.privacy_class = privacy_class
         self.written = 0
+        #: Số dòng sổ KHÔNG ghi được. Phải đếm được: mất một dòng sổ là mất một dòng chi phí, và đó là
+        #: dữ liệu tiền — im lặng hoàn toàn thì không ai biết mà đối soát (§17.8).
+        self.failed = 0
 
     def append(self, row: dict) -> None:
         """Ghi MỘT dòng sổ. Lỗi ghi sổ không được làm hỏng job đang chạy (chỉ đếm là mất)."""
@@ -1030,10 +1036,17 @@ class DbLedger:
             values["user_id"] = self.user_id
         columns = [*self.COLUMNS, *(["user_id"] if self.user_id else [])]
         placeholders = ", ".join(["%s"] * len(columns))
-        self.db.execute(
-            f"INSERT INTO llm_calls ({', '.join(columns)}) VALUES ({placeholders})",
-            tuple(values[column] for column in columns),
-        )
+        try:
+            self.db.execute(
+                f"INSERT INTO llm_calls ({', '.join(columns)}) VALUES ({placeholders})",
+                tuple(values[column] for column in columns),
+            )
+        except Exception as exc:  # noqa: BLE001 - lời gọi ĐÃ trả tiền rồi; không được giết job vì sổ sách
+            # Đúng như docstring: lỗi ghi sổ không làm hỏng job (tiền đã tiêu, kết quả vẫn dùng được),
+            # nhưng phải ồn ào trong log và đếm được để còn đối soát.
+            self.failed += 1
+            logger.error("không ghi được dòng llm_calls (outcome=%s): %s", kind, exc)
+            return
         self.written += 1
 
     def totals(self) -> dict:

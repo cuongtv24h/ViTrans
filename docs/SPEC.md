@@ -1697,6 +1697,8 @@ gọi nhà cung cấp bằng khoá của lease ──▶ settle(lease, kết qu�
 
 **Phần đúng đắn (đặt chỗ nguyên tử):** hàm SQL `pool_try_reserve` kiểm tra và trừ **trong một giao dịch** mọi chiều hạn mức ở cả hai phạm vi (nhóm và deployment). Hai bản (`MemoryState` Python và SQL) có cùng ngữ nghĩa và được so khớp từng bước trên các kịch bản có hạt giống (§17.16).
 
+**Trạng thái ở đâu (M3 — đã triển khai).** Khi chạy trên VPS, trạng thái pool (`llm_scope_state`, `llm_leases`, `llm_incidents`) nằm **trong CSDL** và mọi lời gọi đi qua `pool_try_reserve`/`pool_settle` (`visynth.pool.dbstate.DbPoolState`). Lý do: nhiều tiến trình cùng chạy (API, worker, cron) — nếu trạng thái chỉ ở RAM thì hai worker cùng tiêu một ngân sách RPM, khởi động lại là quên hết cooldown, khoá bị nhà cung cấp từ chối chỉ bị cách ly trong một tiến trình, và `ops health` báo `credentials_quarantined = 0` trong khi khoá đã chết (cảnh báo mù). `MemoryState` chỉ còn dùng cho mô phỏng, kiểm thử và chạy cục bộ.
+
 | Chiều | Công thức | Ghi chú |
 |---|---|---|
 | RPM | Token-bucket dung lượng `max(1, rpm × m × s)`, nạp `dung lượng / 60` mỗi giây, mỗi lời gọi lấy 1 | `m` = `safety_margin`; `s` = `limit_scale` ∈ [0,3; 1]; sàn 1 để `rpm` nhỏ không bao giờ kẹt vĩnh viễn |
@@ -2298,6 +2300,8 @@ Quy tắc kèm theo:
 ### 20.7 Vận hành
 
 - **Giám sát ngoài máy** (Uptime Kuma ở máy khác hoặc dịch vụ như healthchecks.io): ping `/healthz`; kiểm tra "dead man's switch" cho cron sao lưu (không thấy tín hiệu thành công trong 26 giờ thì báo); cảnh báo qua Telegram hoặc email.
+- **Cảnh báo theo ngưỡng (M3 — đã triển khai).** `visynth ops health` trả về mã thoát **3** khi có việc cần người xem, và `/healthz` trả `status = ok | degraded | critical` kèm danh sách mã cảnh báo (`?detail=1` thêm con số). Ngưỡng nằm một chỗ trong `visynth.worker.alerts`, đổi bằng `VISYNTH_ALERT_<TRƯỜNG>` (−1 = tắt). Các cảnh báo: khoá bị cách ly (§17 — phải xoay khoá), ví âm, task mồ côi, lease quá hạn, cầu dao mở, hàng đợi tắc, task hỏng nhiều, bị dò quét (giới hạn tốc độ), pool chập chờn, CSDL phình. Mỗi cảnh báo kèm câu **cần làm gì** — cảnh báo không có hành động thì chỉ tổ dạy người ta bỏ qua.
+- **Diễn tập sự cố viết thành test (M3).** Bốn kịch bản diễn tập (`test_drills_m3.py` ở gói kiểm thử phía máy chủ, chạy mỗi lần CI): hết hạn mức (429 → chuyển deployment → lỗi có `retry_after_s`), khoá bị từ chối (cách ly **ở CSDL** + cảnh báo bật), nhà cung cấp sập (cầu dao mở sau 3 lỗi liên tiếp, hồi phục sau cooldown), VPS chết (task mồ côi + lease treo → `ops reap` thu hồi, job chạy tiếp).
 - **Đĩa:** cảnh báo ở 80%; `docker system prune` định kỳ; xoay vòng nhật ký; `purge_expired_documents` chạy mỗi giờ.
 - **Nâng cấp:** sao lưu → kéo image mới → `docker compose up -d` → chạy migration → kiểm thử khói (AC-01) → có sẵn đường lui về image cũ. Chấp nhận ngừng ngắn; báo trước trên trang trạng thái.
 - **Runbook:** (a) máy không phản hồi: kiểm tra qua bảng điều khiển nhà cung cấp VPS, khởi động lại, nếu hỏng đĩa thì khôi phục (§20.6); (b) đĩa đầy; (c) CSDL hỏng: khôi phục từ sao lưu; (d) nghi bị xâm nhập: ngắt, **xoay mọi khoá** (API LLM, OAuth, khoá chủ), phân tích `llm_calls` và `audit_log`, thông báo người dùng nếu cần theo luật.
@@ -3111,8 +3115,8 @@ Output ONLY JSON that matches the provided schema.
 
 | Kiểm tra | Kết quả |
 |---|---|
-| `pytest tests` (so khớp trích đoạn, lint thuật ngữ, số liệu, ước tính chi phí, wire schema, render prompt, **LLM Pool**, **khai báo và mã hoá khoá**, **Lõi văn phong**, structured output) | ĐẠT: 184 passed in 1.15s |
-| `validate_spec.py` (schema, ví dụ, kiểm tra phủ định, chéo ví dụ, prompt, OpenAPI, enum chéo DDL/schema/OpenAPI, cấu hình pool, lõi mẫu) | ĐẠT: 130 kiểm tra |
+| `pytest tests` (so khớp trích đoạn, lint thuật ngữ, số liệu, ước tính chi phí, wire schema, render prompt, **LLM Pool**, **khai báo và mã hoá khoá**, **Lõi văn phong**, structured output) | ĐẠT: 184 passed in 1.25s |
+| `validate_spec.py` (schema, ví dụ, kiểm tra phủ định, chéo ví dụ, prompt, OpenAPI, enum chéo DDL/schema/OpenAPI, cấu hình pool, lõi mẫu) | THẤT BẠI: 129 kiểm tra |
 | DDL | Chỉ parse cú pháp (chưa chạy trên PostgreSQL thật) |
 
 Chạy ngày 2026-10-02, Python 3.11.2. Kiểm tra lại bằng lệnh ở §0. Các bài kiểm tra này chứng minh **logic và ngữ nghĩa** của spec; chúng KHÔNG chứng minh chất lượng đầu ra của LLM thật hay hạn mức thật của nhà cung cấp (xem §17.9, §21).
