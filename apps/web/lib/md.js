@@ -68,6 +68,45 @@ export function markdownToHtml(markdown) {
   return out.join("\n");
 }
 
+/** Dòng neo do pipeline sinh sau mỗi đoạn dịch: `<sub>Nguồn: **P000123**</sub>` (xem `build_markdown`). */
+export const SOURCE_ANCHOR = /^\s*<sub>\s*Nguồn:\s*\*\*(P[0-9]{6,})\*\*\s*<\/sub>\s*$/;
+
+/**
+ * Tách Markdown bản dịch (mức `full_translation`) thành từng đoạn kèm `pid` nguồn.
+ *
+ * Mức dịch đầy đủ không có `report_sections`/`report_blocks`, nhưng `build_markdown` chèn neo
+ * `<sub>Nguồn: **Pxxxxxx**</sub>` sau mỗi đoạn — nhờ vậy trang đọc vẫn gắn được trích dẫn bấm mở
+ * nguyên văn nguồn. Hàm này thuần (không DOM) để kiểm được bằng Node, không cần trình duyệt.
+ *
+ * Trả về danh sách `{heading}` (tiêu đề) hoặc `{markdown, cites}` (đoạn văn).
+ */
+export function splitTranslation(markdown) {
+  const blocks = [];
+  let buffer = [];
+  const flush = (cite) => {
+    const body = buffer.join("\n").trim();
+    buffer = [];
+    if (!body && !cite) return;
+    blocks.push({ markdown: body, cites: cite ? [cite] : [] });
+  };
+  for (const line of String(markdown || "").split(/\r?\n/)) {
+    const found = SOURCE_ANCHOR.exec(line);
+    if (found) {
+      flush(found[1]);
+      continue;
+    }
+    const heading = /^#{1,2} (.*)$/.exec(line);
+    if (heading) {
+      flush(null);
+      blocks.push({ heading: heading[1].trim() });
+      continue;
+    }
+    buffer.push(line);
+  }
+  flush(null);
+  return blocks;
+}
+
 /** Cắt chữ cho thẻ tóm tắt mà không cắt giữa từ. */
 export function excerpt(text, max = 180) {
   const clean = String(text || "").replace(/\s+/g, " ").trim();

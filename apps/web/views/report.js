@@ -6,7 +6,7 @@
 // tin lời AI, họ đọc được nguyên văn câu nguồn mà khối đó dựa vào.
 
 import { ApiError, download, get, post } from "../lib/api.js";
-import { markdownToHtml } from "../lib/md.js";
+import { markdownToHtml, splitTranslation } from "../lib/md.js";
 import { FLAG_REASONS, LEVELS, h, mount, toast, usd, when, words } from "../lib/ui.js";
 
 export async function render(root, { id }) {
@@ -61,6 +61,27 @@ export async function render(root, { id }) {
         },
       },
       cite,
+    );
+  }
+
+  function plainBlockView(block) {
+    const source = h("div", {});
+    return h(
+      "article",
+      { class: "block" },
+      h("div", { html: markdownToHtml(block.markdown || "") }),
+      (block.cites || []).length ? h("div", { class: "row" }, ...block.cites.map((cite) => citationChip(cite, source))) : null,
+      source,
+    );
+  }
+
+  function translationView(markdown) {
+    return h(
+      "div",
+      { class: "reader" },
+      ...splitTranslation(markdown).map((block) =>
+        block.heading ? h("h2", {}, block.heading) : plainBlockView(block),
+      ),
     );
   }
 
@@ -205,7 +226,7 @@ export async function render(root, { id }) {
           ...(section.blocks || []).map(blockView),
         ),
       ),
-      !(report.sections || []).length ? h("div", { html: markdownToHtml(report.markdown || "") }) : null,
+      !(report.sections || []).length ? translationView(report.markdown || "") : null,
     ),
     h(
       "section",
