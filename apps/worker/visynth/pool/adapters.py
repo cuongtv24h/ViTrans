@@ -137,8 +137,12 @@ class GeminiAdapter:
                 gen["responseJsonSchema"] = request.schema
         if request.thinking in ("off", "low"):
             gen["thinkingConfig"] = {"thinkingBudget": 0 if request.thinking == "off" else 512}
+        parts: list[dict[str, Any]] = [{"text": request.user}]
+        for item in request.media:
+            # §6.1: PDF có chữ nhúng sẵn thì phần chữ không tính phí; trang quét tính theo token ảnh.
+            parts.append({"inline_data": {"mime_type": item.mime_type, "data": _b64(item.data)}})
         body: dict[str, Any] = {
-            "contents": [{"role": "user", "parts": [{"text": request.user}]}],
+            "contents": [{"role": "user", "parts": parts}],
             "generationConfig": gen,
         }
         if request.system:
@@ -166,6 +170,9 @@ class OpenAICompatAdapter:
     kind: str = "openai_compat"
 
     def _body(self, request: LLMRequest) -> dict:
+        if request.media:
+            # Không gửi PDF qua Chat Completions: router đã lọc theo `needs.pdf` trước khi tới đây (§17.6).
+            raise ValueError("openai_compat_không_nhận_tệp_đính_kèm")
         body: dict[str, Any] = {
             "model": self.model_uri,
             "messages": ([{"role": "system", "content": request.system}] if request.system else [])
@@ -189,6 +196,12 @@ class OpenAICompatAdapter:
         data = json.dumps(self._body(request), ensure_ascii=False).encode("utf-8")
         reply = self.transport("POST", url, headers, data, self.timeout_s)
         return _result(self.kind, reply, request, self.model_uri, self.deployment_id)
+
+
+def _b64(data: bytes) -> str:
+    import base64
+
+    return base64.b64encode(data).decode("ascii")
 
 
 def list_models(

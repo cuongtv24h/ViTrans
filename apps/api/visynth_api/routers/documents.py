@@ -7,12 +7,14 @@ PDF scan cần OCR (P10) — M2; ở M1 PDF trả 415 kèm hướng dẫn.
 from __future__ import annotations
 
 import hashlib
+import uuid
 from pathlib import Path
 
 import psycopg
 from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
 
 from visynth.extract import Extraction, ExtractionError, extract
+from visynth.extract.ocr import estimate_scanned_words
 from visynth_api.db import Database
 from visynth_api.errors import Problem
 from visynth_api.security import current_user
@@ -23,7 +25,7 @@ DOC_COLUMNS = (
     "id, title, source_type, original_filename, mime_type, byte_size, sha256, language_code, language_confidence, "
     "word_count, page_count, token_estimate, extraction_quality, extraction_warnings, status, created_at, expires_at"
 )
-ALLOWED_SUFFIXES = (".txt", ".md", ".docx")
+ALLOWED_SUFFIXES = (".txt", ".md", ".docx", ".pdf")
 
 
 def _db(request: Request) -> Database:
@@ -86,29 +88,43 @@ def upload_document(
     if not rights_attested:
         raise Problem(422, "rights_not_attested", "cần xác nhận bạn có quyền sử dụng tài liệu này")
     filename = Path(file.filename or "tai-lieu.txt").name
-    if filename.lower().endswith(".pdf"):
-        raise Problem(415, "pdf_requires_ocr", "PDF scan cần OCR (M2); hãy dán văn bản hoặc dùng .txt/.md/.docx")
     if not filename.lower().endswith(ALLOWED_SUFFIXES):
-        raise Problem(415, "unsupported_type", f"chỉ nhận {', '.join(ALLOWED_SUFFIXES)} ở M1")
+        raise Problem(415, "unsupported_type", f"chỉ nhận {', '.join(ALLOWED_SUFFIXES)}")
     raw = file.file.read()
     if len(raw) > settings.max_upload_bytes:
         raise Problem(413, "file_too_large", f"tệp vượt {settings.max_upload_bytes // (1024 * 1024)} MB")
-    try:
-        parsed = extract(raw, filename=filename, title=title)
-    except ExtractionError as exc:
-        raise Problem(422, exc.code, str(exc)) from exc
-
+    # PDF cần tệp gốc cho OCR (P10) nên phải ghi xuống đĩa trước khi bóc tách.
+    is_pdf = raw[:5] == b"%PDF-"
+    document_id = uuid.uuid4()
     storage_dir = settings.upload_dir / "documents"
     storage_dir.mkdir(parents=True, exist_ok=True)
+    stored: Path | None = None
+    if is_pdf:
+        stored = storage_dir / str(document_id)
+        stored.write_bytes(raw)
+    try:
+        parsed = extract(stored if stored is not None else raw, filename=filename, title=title)
+    except ExtractionError as exc:
+        if stored is not None:
+            stored.unlink(missing_ok=True)
+        raise Problem(422, exc.code, str(exc)) from exc
+    words_estimated = False
+    if parsed.needs_ocr and not parsed.word_count:
+        # Tài liệu quét chưa có chữ: ước lượng để báo giá được ngay; worker ghi lại số thật sau khi OCR.
+        words_estimated = True
+        word_count = estimate_scanned_words(parsed.page_count)
+    else:
+        word_count = parsed.word_count
     try:
         with db.tx() as cur:
             cur.execute(
-                """INSERT INTO documents (user_id, title, source_type, original_filename, mime_type, byte_size, sha256,
-                        language_code, language_confidence, word_count, page_count, token_estimate, extraction_quality,
-                        extraction_warnings, rights_attested_at, status)
-                   VALUES (%s, %s, 'upload', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), 'ready')
+                """INSERT INTO documents (id, user_id, title, source_type, original_filename, mime_type, byte_size,
+                        sha256, language_code, language_confidence, word_count, page_count, token_estimate,
+                        extraction_quality, extraction_warnings, ocr_pages, rights_attested_at, status)
+                   VALUES (%s, %s, %s, 'upload', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now(), 'ready')
                    RETURNING id""",
                 (
+                    document_id,
                     user["id"],
                     parsed.title,
                     filename,
@@ -117,15 +133,17 @@ def upload_document(
                     hashlib.sha256(raw).hexdigest(),
                     parsed.language_code,
                     parsed.language_confidence,
-                    parsed.word_count,
+                    word_count,
                     parsed.page_count,
                     parsed.token_estimate,
                     parsed.extraction_quality,
                     psycopg.types.json.Jsonb(parsed.warnings),
+                    psycopg.types.json.Jsonb(list(parsed.ocr_pages)),
                 ),
             )
             document_id = cur.fetchone()["id"]
-            cur.execute("UPDATE documents SET storage_key = %s WHERE id = %s", (str(storage_dir), document_id))
+            if stored is not None:
+                cur.execute("UPDATE documents SET storage_key = %s WHERE id = %s", (str(storage_dir), document_id))
             for paragraph in parsed.paragraphs:
                 row = paragraph.as_row()
                 cur.execute(
@@ -170,7 +188,23 @@ def upload_document(
             document = cur.fetchone()
     except psycopg.Error as exc:
         raise Problem(500, "internal_error", f"không lưu được tài liệu: {exc.diag.message_primary}") from exc
-    return {"document": {**document, "warnings": parsed.warnings}}
+    return {
+        "document": {
+            **document,
+            "warnings": parsed.warnings,
+            "needs_ocr": parsed.needs_ocr,
+            "words_estimated": words_estimated,
+            "ocr_chunks": len(parsed.ocr_pages) and len(_ocr_chunk_keys(parsed.page_count or 0, parsed.ocr_pages)),
+        }
+    }
+
+
+def _ocr_chunk_keys(page_count: int, pages: list[int]) -> list[str]:
+    """`task_key` các cụm OCR mà job sẽ sinh ra (hiển thị cho người dùng biết vì sao lâu)."""
+    from visynth.extract.ocr import plan_ocr
+
+    full = sorted(pages) == list(range(1, page_count + 1))
+    return plan_ocr(page_count, pages_needing_ocr=None if full else pages).task_keys
 
 
 @router.get("/documents")

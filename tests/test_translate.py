@@ -312,6 +312,7 @@ def test_job_stages_marked_pending_for_translate(client, db):
     assert stages["translate"] == "pending"
     assert stages["map"] == "skipped" and stages["write"] == "skipped" and stages["repair"] == "skipped"
     assert stages["profile"] == "pending" and stages["glossary"] == "pending"
+    assert stages["extract"] == "pending"  # chạy trước, không OCR thì chỉ là bước rỗng
 
 
 def test_worker_runs_translate_end_to_end(client, db):
@@ -443,7 +444,10 @@ def test_worker_defers_task_when_pool_has_no_room(client, db):
     store = WorkerStore(db.dsn, worker_id="worker-dich-3")
     try:
         worker = JobWorker(store, lambda _j: _Busy(), limit=1)
-        outcome = worker.run_once()["results"][0]
+        # `extract` (rỗng với TXT) chạy trước; lần hoãn đầu tiên đến từ `profile`.
+        outcome = next(
+            r for r in (worker.run_once()["results"][0], worker.run_once()["results"][0]) if r.get("deferred")
+        )
     finally:
         store.close()
 

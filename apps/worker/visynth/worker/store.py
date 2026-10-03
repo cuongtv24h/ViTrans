@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -25,10 +26,12 @@ def to_jsonb(value: Any) -> Jsonb:
     return Jsonb(value, dumps=lambda v: json.dumps(v, ensure_ascii=False, default=str))
 
 
+#: Giai đoạn OCR (P10) — chỉ chạy khi tài liệu có trang quét; không tính vào tiến độ hiển thị.
+OCR_STAGE = "extract"
 #: Thứ tự giai đoạn worker chạy cho các mức tổng hợp (khớp `pipeline.run.STAGE_SEQUENCE`).
-STAGE_SEQUENCE = ("profile", "glossary", "map", "consolidate", "write", "verify", "repair")
+STAGE_SEQUENCE = (OCR_STAGE, "profile", "glossary", "map", "consolidate", "write", "verify", "repair")
 #: Mức `full_translation` đi đường dịch trực tiếp: P0 → cổng glossary → P9 (`translate`).
-TRANSLATE_SEQUENCE = ("profile", "glossary", "translate")
+TRANSLATE_SEQUENCE = (OCR_STAGE, "profile", "glossary", "translate")
 
 
 def stage_sequence(level: str) -> tuple[str, ...]:
@@ -38,6 +41,7 @@ def stage_sequence(level: str) -> tuple[str, ...]:
 
 #: Tiến độ hiển thị sau khi xong mỗi giai đoạn (%).
 STAGE_PROGRESS = {
+    "extract": 2,  # chỉ để hiển thị; tiến độ thật bắt đầu từ `profile`
     "profile": 8,
     "glossary": 20,
     "map": 45,
@@ -111,7 +115,7 @@ class WorkerStore:
         """`queued` → `running` + sinh `job_tasks` cho từng giai đoạn (một task/khối lượng)."""
         with self.tx() as cur:
             cur.execute(
-                """SELECT id, level FROM jobs
+                """SELECT id, level, document_id FROM jobs
                     WHERE status = 'queued' AND NOT cancel_requested
                     ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT %s""",
                 (limit,),
@@ -123,15 +127,154 @@ class WorkerStore:
                     (job["id"],),
                 )
                 for stage in stage_sequence(str(job["level"])):
-                    cur.execute(
-                        """INSERT INTO job_tasks (job_id, stage, task_key, max_attempts)
-                           VALUES (%s, %s, %s, 3) ON CONFLICT (job_id, stage, task_key) DO NOTHING""",
-                        (job["id"], stage, stage),
-                    )
+                    keys = self._ocr_task_keys(cur, job) if stage == OCR_STAGE else [stage]
+                    for task_key in keys:
+                        cur.execute(
+                            """INSERT INTO job_tasks (job_id, stage, task_key, max_attempts)
+                               VALUES (%s, %s, %s, 3) ON CONFLICT (job_id, stage, task_key) DO NOTHING""",
+                            (job["id"], stage, task_key),
+                        )
                 self._event(cur, job["id"], "job_queued", data={"level": job["level"]})
             return jobs
 
     # ------------------------------------------------------------- điểm lưu theo giai đoạn
+    def _ocr_task_keys(self, cur, job: dict) -> list[str]:
+        """`task_key` cho giai đoạn `extract`: một khoá mỗi cụm 10-15 trang cần OCR (§6.0).
+
+        Tài liệu không có trang quét vẫn có một task `extract` để tiến độ/điểm lưu rõ ràng.
+        """
+        from visynth.extract.ocr import plan_ocr
+
+        cur.execute("SELECT ocr_pages, page_count FROM documents WHERE id = %s", (job["document_id"],))
+        document = cur.fetchone() or {}
+        pages = [int(p) for p in (document.get("ocr_pages") or [])]
+        page_count = int(document.get("page_count") or 0)
+        if not pages or page_count <= 0:
+            return [OCR_STAGE]
+        full = sorted(pages) == list(range(1, page_count + 1))
+        plan = plan_ocr(page_count, pages_needing_ocr=None if full else pages)
+        return plan.task_keys or [OCR_STAGE]
+
+    def document_path(self, document_id: str) -> str:
+        """Đường dẫn tệp gốc đã lưu khi tải lên (`documents.storage_key` + `id`)."""
+        row = self.one("SELECT storage_key, id FROM documents WHERE id = %s", (document_id,)) or {}
+        if not row.get("storage_key"):
+            raise LookupError("tài liệu không còn tệp gốc trên máy chủ")
+        return str(Path(str(row["storage_key"])) / str(row["id"]))
+
+    def job_ocr_pages(self, job_id: str) -> dict[int, str]:
+        """Trang đã OCR xong của job: gộp `result.pages` của mọi task `extract` đã chạy ra kết quả.
+
+        Tính cả task đang `running` (chính task đang ghép hoặc cụm chạy song song đã có kết quả) —
+        nếu chỉ lấy `succeeded` thì cụm vừa OCR xong sẽ bị chính nó bỏ quên khi ghép tài liệu.
+        """
+        pages: dict[int, str] = {}
+        for row in self.all(
+            "SELECT result FROM job_tasks WHERE job_id = %s AND stage = 'extract' "
+            "AND status IN ('running','succeeded')",
+            (job_id,),
+        ):
+            chunk = dict(row["result"] or {}).get("pages") or {}
+            for page, text in chunk.items():
+                pages[int(page)] = str(text)
+        return dict(sorted(pages.items()))
+
+    def append_document_warning(self, document_id: str, warning: str) -> None:
+        """Thêm một cảnh báo bóc tách (không trùng lặp) để người dùng thấy được ở tài liệu."""
+        self.tx_execute(
+            "UPDATE documents SET extraction_warnings = "
+            "(SELECT to_jsonb(array(SELECT DISTINCT value FROM jsonb_array_elements_text(extraction_warnings) AS t(value) "
+            "UNION SELECT %s))) WHERE id = %s",
+            (warning, document_id),
+        )
+
+    def mark_document_ocr(self, document_id: str, *, ocr_pages: list[int] | None = None) -> None:
+        """Cập nhật danh sách trang CÒN cần OCR (rỗng = đã xong hết)."""
+        self.tx_execute(
+            "UPDATE documents SET ocr_pages = %s WHERE id = %s",
+            (to_jsonb([int(p) for p in (ocr_pages or [])]), document_id),
+        )
+
+    def load_document_ocr(self, document_id: str) -> dict:
+        """Trạng thái OCR đã lưu của tài liệu: cờ cần OCR + danh sách trang + `task_key` đã xong."""
+        row = self.one("SELECT source_kind, ocr_pages FROM documents WHERE id = %s", (document_id,)) or {}
+        done = [
+            r["task_key"]
+            for r in self.all(
+                "SELECT task_key FROM job_tasks WHERE job_id IN (SELECT id FROM jobs WHERE document_id = %s) "
+                "AND stage = 'extract' AND status = 'succeeded'",
+                (document_id,),
+            )
+        ]
+        return {
+            "needs_ocr": bool(row.get("ocr_pages")),
+            "ocr_pages": list(row.get("ocr_pages") or []),
+            "source_kind": row.get("source_kind"),
+            "done_chunks": done,
+        }
+
+    def replace_document_text(self, document_id: str, extraction) -> None:
+        """Ghi lại toàn bộ đoạn/mục + số đo của tài liệu sau OCR (xoá bản cũ trong CÙNG giao dịch)."""
+        with self.tx() as cur:
+            cur.execute("DELETE FROM doc_paragraphs WHERE document_id = %s", (document_id,))
+            cur.execute("DELETE FROM doc_sections WHERE document_id = %s", (document_id,))
+            for paragraph in extraction.paragraphs:
+                row = paragraph.as_row()
+                cur.execute(
+                    """INSERT INTO doc_paragraphs (document_id, pid, idx, kind, content, section_id, page_start,
+                            page_end, timecode_start_ms, timecode_end_ms, speaker, char_count)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        document_id,
+                        row["pid"],
+                        row["idx"],
+                        row["kind"],
+                        row["content"],
+                        row["section_id"],
+                        row["page_start"],
+                        row["page_end"],
+                        row["timecode_start_ms"],
+                        row["timecode_end_ms"],
+                        row["speaker"],
+                        row["char_count"],
+                    ),
+                )
+            for section in extraction.sections:
+                row = section.as_row()
+                cur.execute(
+                    """INSERT INTO doc_sections (document_id, section_id, parent_section_id, title, level, idx,
+                            first_pid, last_pid)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        document_id,
+                        row["section_id"],
+                        row["parent_section_id"],
+                        row["title"],
+                        row["level"],
+                        row["idx"],
+                        row["first_pid"],
+                        row["last_pid"],
+                    ),
+                )
+            cur.execute(
+                """UPDATE documents SET source_kind = %s, ocr_pages = '[]'::jsonb, word_count = %s,
+                        token_estimate = %s, page_count = COALESCE(%s, page_count),
+                        extraction_quality = %s, extraction_warnings = %s, language_code = COALESCE(%s, language_code),
+                        language_confidence = %s
+                   WHERE id = %s""",
+                (
+                    "ocr",
+                    extraction.word_count,
+                    extraction.token_estimate,
+                    extraction.page_count,
+                    extraction.extraction_quality,
+                    to_jsonb(list(extraction.warnings)),
+                    extraction.language_code,
+                    extraction.language_confidence,
+                    document_id,
+                ),
+            )
+
     def save_checkpoint(self, job_id: str, stage: str, state: dict) -> None:
         """Lưu trạng thái pipeline sau một giai đoạn để chạy tiếp mà không chạy lại."""
         self.tx_execute(
@@ -311,6 +454,10 @@ class WorkerStore:
                 WHERE id = %s""",
             (to_jsonb(result), tokens_in, tokens_out, cost_usd, task_id),
         )
+
+    def save_task_result(self, task_id: int, result: dict) -> None:
+        """Ghi `result` của một task đang chạy (dùng cho checkpoint của từng cụm OCR)."""
+        self.tx_execute("UPDATE job_tasks SET result = %s WHERE id = %s", (to_jsonb(result), task_id))
 
     def task_failed(self, task_id: int, *, code: str, message: str, retryable: bool = False) -> str:
         """Đánh dấu task lỗi; `pending` (còn lượt) hoặc `failed`. Trả trạng thái mới."""

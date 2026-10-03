@@ -17,6 +17,7 @@ dependencies = [
   "sqlalchemy>=2.0",             # chỉ dùng cho Alembic
   "pydantic[email]>=2.7",
   "charset-normalizer>=3.3",
+  "pypdfium2>=4.30",             # đọc PDF có lớp chữ (SPEC §6.1); trang quét chuyển sang P10
   "cryptography>=42",  # kho khoá API mã hoá (visynth.pool.secrets, SPEC §17.14)
 ]
 
@@ -30,6 +31,7 @@ dev = [
   "jsonschema>=4.20",
   "pyyaml>=6",
   "openapi-spec-validator>=0.7",
+  "fpdf2>=2.7",             # dựng PDF mẫu (kể cả PDF chỉ có ảnh) trong test OCR
 ]
 
 [project.scripts]

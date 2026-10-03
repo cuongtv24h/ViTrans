@@ -108,10 +108,10 @@ def test_non_docx_zip_is_rejected(tmp_path: Path):
     assert excinfo.value.code == "unsupported_file_type"
 
 
-def test_pdf_and_oversize_are_rejected(tmp_path: Path):
+def test_broken_pdf_and_oversize_are_rejected(tmp_path: Path):
     with pytest.raises(ExtractionError) as e1:
         extract(b"%PDF-1.7 fake pdf", title="x")
-    assert e1.value.code == "unsupported_file_type"
+    assert e1.value.code == "unreadable_pdf"
 
     with pytest.raises(ExtractionError) as e2:
         extract(b"x" * 5000, title="x", max_bytes=1000)

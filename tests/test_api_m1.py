@@ -171,7 +171,7 @@ def test_end_to_end_job_runs_to_report(client, db):
     stages = {row["stage"]: row["status"] for row in detail["stages"]}
     assert stages["profile"] == "succeeded"
     assert stages["repair"] == "succeeded"
-    assert stages["extract"] == "skipped"
+    assert stages["extract"] == "succeeded", "giai đoạn `extract` chạy (không còn `skipped` từ M1)"
     assert stages["translate"] == "skipped"
 
     report = client.get(f"/api/v1/reports/{detail['report_id']}").json()
@@ -223,13 +223,13 @@ def test_upload_and_job_guards(client, db):
         data={"rights_attested": "false"},
     )
     assert denied.status_code == 422 and denied.json()["code"] == "rights_not_attested"
-    # PDF scan cần OCR (M2)
+    # PDF hỏng (đúng magic bytes nhưng không mở được) → 422 với mã lỗi rõ ràng
     pdf = client.post(
         "/api/v1/documents",
         files={"file": ("a.pdf", b"%PDF-1.4 fake", "application/pdf")},
         data={"rights_attested": "true"},
     )
-    assert pdf.status_code == 415 and pdf.json()["code"] == "pdf_requires_ocr"
+    assert pdf.status_code == 422 and pdf.json()["code"] == "unreadable_pdf"
 
     document = _upload(client, "Một đoạn ngắn. " * 40)
     # Thiếu Idempotency-Key → 422 của FastAPI
@@ -401,9 +401,9 @@ def test_retryable_error_keeps_task_pending_then_fails_job(client, db):
     store = WorkerStore(db.dsn, worker_id="worker-loi")
     try:
         worker = JobWorker(store, lambda job: Hỏng(), limit=1)
-        # Giai đoạn `profile` có phương án dự phòng nên vẫn xong; lỗi lộ ra ở `glossary`.
-        worker.run_once()
-        worker.run_once()
+        # `extract` rỗng với TXT, `profile` có phương án dự phòng nên vẫn xong; lỗi lộ ra ở `glossary`.
+        for _ in range(3):
+            worker.run_once()
         task = db.one(
             "SELECT status, attempt, run_after > now() AS waiting, error_code, stage FROM job_tasks "
             "WHERE job_id = %s AND stage = 'glossary' ORDER BY id LIMIT 1",

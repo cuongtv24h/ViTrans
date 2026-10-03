@@ -74,6 +74,8 @@ CREATE TABLE documents (
   token_estimate      integer CHECK (token_estimate >= 0),
   extraction_quality  real CHECK (extraction_quality BETWEEN 0 AND 1),
   extraction_warnings jsonb NOT NULL DEFAULT '[]'::jsonb,
+  source_kind         text CHECK (source_kind IS NULL OR source_kind IN ('text','ocr')),  -- chữ có sẵn hay do P10 OCR
+  ocr_pages           jsonb NOT NULL DEFAULT '[]'::jsonb,  -- trang cần OCR (worker lập cụm 10-15 trang, §6.1)
   profile             jsonb,                   -- DocProfile (schemas/doc_profile.schema.json)
   rights_attested_at  timestamptz,             -- người dùng xác nhận có quyền sử dụng tài liệu
   status              text NOT NULL DEFAULT 'uploaded' CHECK (status IN ('uploaded','extracting','ready','failed','deleted')),

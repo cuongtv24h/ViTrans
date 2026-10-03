@@ -38,10 +38,11 @@ STAGES = (
     "assemble",
 )
 TERMINAL = ("succeeded", "failed", "canceled", "expired")
-#: Giai đoạn worker thực sự chạy (4 giai đoạn còn lại được đánh `skipped` ở M1).
-PIPELINE_STAGES = ("profile", "glossary", "map", "consolidate", "write", "verify", "repair")
+#: Giai đoạn worker thực sự chạy (các giai đoạn còn lại được đánh `skipped`).
+#: `extract` chỉ làm việc khi tài liệu có trang quét (OCR bằng P10, §6.1).
+PIPELINE_STAGES = ("extract", "profile", "glossary", "map", "consolidate", "write", "verify", "repair")
 #: Mức dịch đầy đủ đi đường P0 → glossary → P9 (§6.10) nên `translate` chạy thật, phần tổng hợp thì bỏ.
-TRANSLATE_STAGES = ("profile", "glossary", "translate")
+TRANSLATE_STAGES = ("extract", "profile", "glossary", "translate")
 
 
 def pipeline_stages(level: str) -> tuple[str, ...]:

@@ -34,6 +34,12 @@ TAMPER_MODES = ("number", "glossary", "fabricated", "plan", "quote", "untranslat
 
 # ------------------------------------------------------------------ dữ liệu suy ra từ tài liệu
 
+#: Văn bản P10 "đọc" được từ một trang quét trong kịch bản giả (đủ dài để không bị coi là trang lỗi).
+OCR_SAMPLE_TEXT = (
+    "Bản quét này được OCR trong kịch bản giả của ViSynth. Nội dung nói về quy trình dịch tài liệu: "
+    "giữ nguyên số liệu và mã định danh, dùng đúng thuật ngữ đã chốt, và đánh cờ thay vì đoán khi không chắc. "
+) * 3
+
 #: Bảng thuật ngữ do P1 trả về. Phải là thuật ngữ CÓ THẬT trong tài liệu mẫu.
 GLOSSARY: list[dict[str, Any]] = [
     {
@@ -600,6 +606,23 @@ class DemoProducer:
                 out = re.sub(rf"(?<!\w){re.escape(form)}(?!\w)", replacement, out, flags=flags)
         return out
 
+    def _p10(self, request: LLMRequest) -> FakeReply:
+        """P10 — OCR: trả văn bản của cụm trang được yêu cầu, kèm mốc `<<<PAGE n>>>`.
+
+        Kịch bản giả dùng chính đoạn văn của tài liệu mẫu (chia đều cho số trang trong `page_range`),
+        nên kết quả OCR vẫn là văn bản Việt có thật để các giai đoạn sau kiểm tra được.
+        """
+        page_range = _tag(request.user, "page_range").strip()
+        start, _, end = page_range.partition("-")
+        first, last = int(start or 1), int(end or start or 1)
+        # Tài liệu quét chưa có đoạn nào (bản thân P10 mới tạo ra chúng) nên có văn bản dự phòng.
+        paragraphs = [p.content for p in self.ext.paragraphs if p.content.strip()] or [OCR_SAMPLE_TEXT]
+        pages = []
+        for page in range(first, last + 1):
+            body = paragraphs[(page - 1) % len(paragraphs)]
+            pages.append(f"<<<PAGE {page}>>>\n{body}")
+        return FakeReply(text="\n\n".join(pages))
+
     def __call__(self, request: LLMRequest) -> FakeReply:
         handlers = {
             "P0": self._p0,
@@ -612,6 +635,7 @@ class DemoProducer:
             "P7": self._p7,
             "P8": self._p8,
             "P9": self._p9,
+            "P10": self._p10,
         }
         fn = handlers.get(request.prompt_id)
         if fn is None:  # pragma: no cover - M0 chỉ có P0–P8

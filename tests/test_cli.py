@@ -66,11 +66,12 @@ def test_missing_file_is_reported(capsys):
     assert "LỖI" in capsys.readouterr().err
 
 
-def test_pdf_is_reported_as_unsupported(tmp_path: Path, capsys):
+def test_broken_pdf_is_reported_with_clear_code(tmp_path: Path, capsys):
+    """PDF đúng magic bytes nhưng không mở được → mã lỗi `unreadable_pdf` (không phải 'unsupported')."""
     pdf = tmp_path / "tai_lieu.pdf"
     pdf.write_bytes(b"%PDF-1.7\n% fake pdf\n")
     assert main(["extract", str(pdf)]) == 1
-    assert "unsupported_file_type" in capsys.readouterr().err
+    assert "unreadable_pdf" in capsys.readouterr().err
 
 
 def test_bad_level_is_rejected():

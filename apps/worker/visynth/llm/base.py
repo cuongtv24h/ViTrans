@@ -36,6 +36,22 @@ class Outcome:
 
 
 @dataclass(frozen=True)
+class Media:
+    """Tệp đính kèm cho lời gọi (hiện chỉ dùng cho P10 OCR: PDF gửi kèm theo cụm trang).
+
+    `data` là byte thô; KHÔNG bao giờ ghi vào sổ `llm_calls` (§17.11: sổ chỉ ghi số đo, không ghi nội dung).
+    """
+
+    mime_type: str
+    data: bytes
+    name: str = ""
+
+    @property
+    def size(self) -> int:
+        return len(self.data)
+
+
+@dataclass(frozen=True)
 class LLMRequest:
     """Một lời gọi LLM đã được render đầy đủ (SPEC §8.2, §17.6)."""
 
@@ -48,6 +64,7 @@ class LLMRequest:
     thinking: str = "default"  # 'off' | 'low' | 'default'
     needs: dict[str, Any] = field(default_factory=dict)  # {'structured','min_ctx_in','vision','pdf'}
     metadata: dict[str, Any] = field(default_factory=dict)  # job/segment/section để ghi sổ
+    media: tuple[Media, ...] = ()  # tệp đính kèm (P10 OCR); rỗng với mọi prompt khác
 
     @property
     def text(self) -> str:

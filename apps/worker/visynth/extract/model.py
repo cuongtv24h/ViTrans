@@ -125,6 +125,10 @@ class Extraction:
     language_confidence: float = 0.0
     page_count: int | None = None
     extraction_quality: float = 1.0
+    #: PDF quét (hoặc trang chữ hỏng) cần OCR bằng P10 — worker chạy giai đoạn `extract` trước `profile`.
+    needs_ocr: bool = False
+    #: Số trang cần OCR (rỗng = không trang nào); dùng để lập cụm 10–15 trang khi chạy P10.
+    ocr_pages: list[int] = field(default_factory=list)
 
     @property
     def word_count(self) -> int:
@@ -185,6 +189,8 @@ def build_document(
     warnings: list[str] | None = None,
     page_count: int | None = None,
     pages_ocr: int = 0,
+    needs_ocr: bool = False,
+    ocr_pages: list[int] | None = None,
 ) -> Extraction:
     """Gán `pid`, dựng mục, tính ngôn ngữ và chất lượng bóc tách cho một danh sách khối thô."""
     warnings = list(warnings or [])
@@ -261,6 +267,8 @@ def build_document(
         language_confidence=conf,
         page_count=page_count,
         extraction_quality=quality,
+        needs_ocr=needs_ocr,
+        ocr_pages=list(ocr_pages or []),
     )
 
 

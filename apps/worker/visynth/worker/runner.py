@@ -30,7 +30,7 @@ from typing import Any
 from visynth.llm.base import RETRYABLE, LLMClient, LLMError
 from visynth.pipeline.assemble import finalize
 from visynth.pipeline.models import JobOptions
-from visynth.pipeline.stages import DeferredError, Pipeline
+from visynth.pipeline.stages import DeferredError, Pipeline, PipelineError
 from visynth.worker.store import WorkerStore, stage_sequence
 
 log = logging.getLogger("visynth.worker")
@@ -48,6 +48,7 @@ _EVENT_MAP = {
 }
 #: Giai đoạn → nhãn tiếng Việt hiển thị cho người dùng.
 STAGE_LABEL = {
+    "extract": "Đọc bản quét (OCR)",
     "profile": "Đọc hồ sơ tài liệu",
     "glossary": "Chốt thuật ngữ",
     "map": "Trích xuất đơn vị tri thức",
@@ -201,7 +202,8 @@ class JobWorker:
             tokens_out=int(stats.get("tokens_out") or 0),
             cost_usd=float(stats.get("cost_usd") or 0),
         )
-        return {"job_id": job["id"], "stage": stage, "finished": False, "awaiting_glossary": False}
+        extra = {k: v for k, v in outcome.items() if k not in ("finished", "awaiting_glossary", "result")}
+        return {"job_id": job["id"], "stage": stage, "finished": False, "awaiting_glossary": False, **extra}
 
     # ------------------------------------------------------------------ một giai đoạn
     def _pipeline_for(self, job: dict, stage: str) -> Pipeline:
@@ -247,6 +249,10 @@ class JobWorker:
         before_in, before_out = pipeline.result.stats_llm.tokens_in, pipeline.result.stats_llm.tokens_out
         self.store.heartbeat(task["id"])
         self.store.stage_started(job["id"], stage, int(task["attempt"] or 1))
+        if stage == "extract":
+            # OCR PDF (§6.0/§6.1): giai đoạn này không dùng `Pipeline` mà gọi P10 theo cụm trang,
+            # nên chạy trước khi dựng pipeline và không đi qua điểm lưu trạng thái pipeline.
+            return self._run_extract(task, job)
         if stage == "glossary" and bool(dict(job.get("options") or {}).get("glossary_confirmed")):
             # Người dùng đã chốt qua cổng duyệt: dùng đúng danh sách đó, không gọi P1 lần nữa.
             pipeline.stage_glossary_decided(self.store.load_job_glossary(str(job["id"])))
@@ -289,6 +295,91 @@ class JobWorker:
         report_id = self.store.save_report(job, result, pipeline.segment_rows())
         self.store.finish_job(job, result)
         return {"finished": True, "report_id": report_id, "result": result}
+
+    def _run_extract(self, task: dict, job: dict) -> dict:
+        """Chạy P10 cho MỘT cụm trang (`task_key` = `OCR:12-26`) rồi ghép lại vào tài liệu (§6.0).
+
+        Mỗi cụm là một task riêng nên chạy song song được và chạy lại không làm lại cụm đã xong.
+        Việc ghép đọc **tất cả** kết quả cụm đã thành công của job (trong `job_tasks.result`) cộng với
+        lớp chữ có sẵn của tệp, nên hai cụm chạy song song không ghi đè kết quả của nhau.
+        """
+        from visynth.extract.ocr import merge_ocr
+        from visynth.extract.pdf import read_pages
+        from visynth.worker.ocr import PdfOcr
+
+        document_id = str(job["document_id"])
+        task_key = str(task.get("task_key") or "extract")
+        if not task_key.startswith("OCR:"):
+            # Tài liệu không có trang quét: giai đoạn này không có việc gì (task vẫn được tạo để điểm lưu rõ ràng).
+            self.store.stage_finished(job["id"], "extract", metrics={"stage": "extract", "skipped": True})
+            return {"finished": False, "stage": "extract", "skipped": True}
+
+        extraction = self.store.load_extraction(job)
+        pdf_path = self.store.document_path(document_id)
+        try:
+            read = read_pages(pdf_path)
+        except Exception as exc:  # noqa: BLE001 - tệp gốc hỏng thì báo rõ cho job
+            self.store.stage_finished(job["id"], "extract", status="failed", error=f"pdf_unreadable: {exc}"[:300])
+            raise PipelineError(f"pdf_unreadable: {exc}") from exc
+
+        ocr = PdfOcr(
+            self.client_factory(job),
+            prompts_dir=self.prompts_dir,
+            language_hint=extraction.language_code or "",
+        )
+        page_count = read.page_count
+        needs_all = read.needs_ocr
+        ocr_pages = list(range(1, page_count + 1)) if needs_all else list(read.multi_column_pages)
+        ocr_pages = [p for p in ocr_pages if p in _pages_of(task_key)]
+        extraction.page_count = page_count
+        extraction.ocr_pages = ocr_pages
+        outcome = ocr.run(
+            extraction,
+            pdf_path,
+            on_chunk=lambda chunk, pages: self.store.save_task_result(
+                task["id"], {"chunk": chunk.task_key, "pages": {str(k): v for k, v in sorted(pages.items())}}
+            ),
+        )
+
+        # Ghép: mọi cụm đã xong của job + lớp chữ của tệp (khi chỉ một số trang cần OCR).
+        done_pages = self.store.job_ocr_pages(str(job["id"]))
+        text_layer = {} if needs_all and not done_pages else _text_layer_pages(read, done_pages)
+        merged = merge_ocr(
+            title=extraction.title,
+            source_type=extraction.source_type,
+            ocr_pages=done_pages,
+            text_layer_pages=text_layer,
+            page_count=page_count,
+            warnings=list(extraction.warnings) + outcome.warnings,
+            pages_ocr=len(done_pages),
+        )
+        merged.needs_ocr = False
+        merged.ocr_pages = []
+        self.store.replace_document_text(document_id, merged)
+        for warning in outcome.warnings:
+            self.store.append_document_warning(document_id, warning)
+        remaining = [
+            p for p in (range(1, page_count + 1) if needs_all else read.multi_column_pages) if p not in done_pages
+        ]
+        self.store.mark_document_ocr(document_id, ocr_pages=remaining)
+        metrics = outcome.metrics() | {"pages_ocr_total": len(done_pages), "pages_remaining": len(remaining)}
+        self.store.stage_finished(job["id"], "extract", metrics=metrics)
+        self.store.emit(
+            job["id"],
+            "stage_progress",
+            stage="extract",
+            message_vi=f"OCR cụm {task_key.removeprefix('OCR:')}",
+            data={"pages_ocr": len(done_pages), "pages_remaining": len(remaining)},
+            progress=self.store.progress(job["id"]),
+        )
+        return {
+            "finished": False,
+            "stage": "extract",
+            "chunk": task_key,
+            "ocr_pages": len(done_pages),
+            "pages_remaining": len(remaining),
+            "failed_chunks": outcome.failed_chunks,
+        }
 
     def _cost_usd(self, tokens_in: int, tokens_out: int) -> float:
         """Chi phí 'bóng' theo giá tham chiếu — dùng chính hàm SQL `llm_cost_usd` để không lệch giá."""
@@ -349,6 +440,29 @@ class JobWorker:
                 progress=self.store.progress(job_id),
             )
         return len(events)
+
+
+def _pages_of(task_key: str) -> set[int]:
+    """`OCR:12-26` → {12..26}; đọc được cả dạng một trang `OCR:7-7`."""
+    _, _, span = task_key.partition(":")
+    start, _, end = span.partition("-")
+    try:
+        lo, hi = int(start or 0), int(end or start or 0)
+    except ValueError:
+        return set()
+    return set(range(lo, hi + 1)) if lo and hi >= lo else set()
+
+
+def _text_layer_pages(read, ocr_pages: dict[int, str]) -> dict[int, str]:
+    """Giữ nguyên chữ có sẵn của những trang KHÔNG nằm trong phần đã OCR."""
+    out: dict[int, str] = {}
+    for index, lines in enumerate(read.pages, start=1):
+        if index in ocr_pages:
+            continue
+        text = "\n".join(lines).strip()
+        if text:
+            out[index] = text
+    return out
 
 
 def _defer_wait_s(exc: Exception) -> float | None:
